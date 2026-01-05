@@ -1,0 +1,43 @@
+{
+  "unset": [
+    "OPENAI_BASE_URL",
+    "OPENAI_API_KEY",
+    "CODEX_PROVIDER",
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_BASE_URL"
+  ],
+  "profiles": {
+    "codex-88": {
+      "type": "codex",
+      "note": "OpenAI official",
+      "env": {
+        "OPENAI_BASE_URL": "https://api.openai.com/v1",
+        "OPENAI_API_KEY": "YOUR_API_KEY",
+        "CODEX_PROVIDER": "OpenAI"
+      },
+      "removeFiles": [
+        "$HOME/.config/openai/auth.json"
+      ]
+    },
+    "codex-mirror": {
+      "type": "codex",
+      "note": "AICodeMirror",
+      "env": {
+        "OPENAI_BASE_URL": "https://api.aicodemirror.com/api/codex/backend-api/codex",
+        "OPENAI_API_KEY": "YOUR_API_KEY",
+        "CODEX_PROVIDER": "AICodeMirror"
+      },
+      "removeFiles": [
+        "$HOME/.config/openai/auth.json"
+      ]
+    },
+    "claude": {
+      "type": "claude",
+      "note": "Claude Code",
+      "env": {
+        "ANTHROPIC_API_KEY": "YOUR_API_KEY",
+        "CLAUDE_CODE_BASE_URL": "https://api.anthropic.com"
+      }
+    }
+  }
+}
