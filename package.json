@@ -1,6 +1,6 @@
 {
   "name": "@praeviso/code-env-switch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Switch between Claude Code and Codex environment variables from a single CLI",
   "bin": {
     "codenv": "bin/codenv.js"
