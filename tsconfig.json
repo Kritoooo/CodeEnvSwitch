@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "CommonJS",
+    "rootDir": "src",
+    "outDir": "bin",
+    "forceConsistentCasingInFileNames": true,
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -2,146 +2,241 @@
 
 A tiny CLI to switch between Claude Code and Codex environment variables.
 
-## Setup
+[中文说明](README_zh.md)
 
-1) Copy the example config and fill in your keys:
+## Features
+
+- Manage multiple profiles and switch by name or type
+- `codenv use` prints shell commands for the current terminal
+- Interactive profile creation and selection
+- Optional cleanup via `removeFiles` and post-switch `commands`
+- Config auto-discovery and type-based default `unset` keys
+
+## Quick start
+
+1) Install:
 
 ```bash
-cp code-env.example.json code-env.json
+npm install -g @praeviso/code-env-switch
 ```
 
-2) Install from npm (after publish) or locally:
+2) Add profiles interactively (this creates `~/.config/code-env/config.json` if missing):
 
 ```bash
-npm install -g code-env-switch
-# or local dev
+codenv add
+# run it again to add the second type
+codenv add
+```
+
+Example session:
+
+```text
+$ codenv add
+Select type (1=codex, 2=claude): 1
+Profile name (default: default): primary
+Base URL (required): https://api.example.com/v1
+API key (required): YOUR_API_KEY
+```
+
+3) Set defaults per type:
+
+```bash
+codenv default codex primary
+codenv default claude default
+```
+
+4) Enable auto-apply in your shell:
+
+```bash
+codenv init
+```
+
+Open a new terminal (or `source ~/.bashrc` / `source ~/.zshrc`) to auto-apply the defaults.
+
+For local development install:
+
+```bash
 npm install -g .
 # or
 npm link
 ```
 
-## 使用方法
-
-`codenv use` 会输出一段 shell 命令，需在当前 shell 里执行，环境变量才会生效。
-
-1) 准备配置文件（或用环境变量指定）：
-
-```bash
-cp code-env.example.json code-env.json
-# 或者
-export CODE_ENV_CONFIG=/path/to/code-env.json
-```
-
-2) 添加/更新 profile：
-
-```bash
-codenv add codex-88 OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=YOUR_API_KEY --note "OpenAI official"
-# 交互式添加（选择 codex/claude，再输入 Base URL 和 API key）
-codenv add --interactive
-# 指定 type（codex/claude，claude 也可写 cc）
-codenv add --type codex 88 OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=YOUR_API_KEY
-```
-
-3) 在当前 shell 中切换并生效（bash/zsh）：
-
-```bash
-eval "$(codenv use codex-88)"
-# 或按类型 + 名称切换（会匹配 type 或形如 codex-88 的 profile）
-eval "$(codenv use codex 88)"
-eval "$(codenv use cc 88)"
-```
-
-4) 查看与列出：
-
-```bash
-codenv list
-codenv show codex-88
-```
-
-5) 清理所有已知键：
-
-```bash
-eval "$(codenv unset)"
-```
-
 ## Usage
 
-List profiles:
+> By default, `codenv use` only outputs shell commands. After running
+> `codenv init`, the shell wrapper applies them automatically.
+
+### Common commands
 
 ```bash
 codenv list
+codenv show codex primary
+codenv default codex primary
+codenv remove codex primary
 ```
 
-Add or update a profile from the CLI:
+`codenv list` (or `codenv ls`) prints a table with `PROFILE`, `TYPE`, and `NOTE`. Default profiles are labeled in the `NOTE` column, and the active profile is shown in green.
+If `profile.name` is set, it is shown in `PROFILE`. Otherwise the profile key is shown (with legacy `type-` prefixes stripped when possible).
+
+### Add / update a profile
 
 ```bash
-codenv add codex-88 OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=YOUR_API_KEY --note "OpenAI official"
-# with explicit type
-codenv add --type codex 88 OPENAI_BASE_URL=https://api.openai.com/v1 OPENAI_API_KEY=YOUR_API_KEY
+codenv add primary OPENAI_BASE_URL=https://api.example.com/v1 OPENAI_API_KEY=YOUR_API_KEY --note "Primary endpoint"
+# with explicit type (codex/claude, claude also accepts cc)
+codenv add --type codex primary OPENAI_BASE_URL=https://api.example.com/v1 OPENAI_API_KEY=YOUR_API_KEY
 ```
 
-Interactive add (choose codex/claude, then enter Base URL and API key):
+When `--type` is set, the profile name is kept as-is and `type` is stored separately.
+Profiles are keyed by an internal id; the human-facing name lives in `profile.name`.
+
+Interactive add (default):
 
 ```bash
-codenv add --interactive
+codenv add
 ```
 
-Switch in the current shell (bash/zsh):
+### Remove a profile
 
 ```bash
-eval "$(codenv use codex-88)"
-# or by type + name
-eval "$(codenv use codex 88)"
-eval "$(codenv use cc 88)"
+codenv remove primary
+# or by type + name (recommended when names overlap)
+codenv remove codex primary
+# multiple at once
+codenv remove codex primary claude default
+# (legacy keys like codex-primary also work)
+codenv remove codex-primary claude-default
+# remove all
+codenv remove --all
 ```
 
-Unset all known keys:
+### Switch in the current shell (bash/zsh)
 
 ```bash
+codenv use
+# use up/down then Enter (q to exit)
+codenv use primary
+# or by type + name (also matches legacy keys like codex-primary)
+codenv use codex primary
+codenv use cc primary
+```
+
+First run `codenv init` once to install the shell wrapper:
+
+```bash
+codenv init
+# or target a specific shell
+codenv init --shell zsh
+```
+
+This wrapper makes `codenv use` and `codenv unset` apply automatically in the
+current shell. To print the snippet without writing to rc, use
+`codenv init --print`.
+
+### Auto-apply default profiles (per type)
+
+Set a default per type (codex/claude) and re-run `codenv init`:
+
+```bash
+codenv default codex primary
+codenv default claude default
+```
+
+```json
+{
+  "defaultProfiles": {
+    "codex": "primary",
+    "claude": "default"
+  }
+}
+```
+
+On new terminal sessions, `codenv` will auto-apply all defaults via `codenv auto`.
+To clear all defaults, run `codenv default --clear` (with confirmation).
+
+One-off without init:
+
+```bash
+eval "$(codenv use codex primary)"
+```
+
+Note: the change takes effect in new terminals. To apply immediately, run:
+
+```bash
+source ~/.bashrc
+# or for zsh
+source ~/.zshrc
+```
+
+### Unset known keys
+
+```bash
+codenv unset
+# or one-off without init
 eval "$(codenv unset)"
 ```
 
-### Config lookup order
+### Fish shell
+
+```fish
+codenv use codex primary
+# or one-off without init
+codenv use codex primary | source
+```
+
+## Config lookup order
 
 `codenv` searches in this order:
 
 1) `--config <path>`
 2) `CODE_ENV_CONFIG`
-3) `./code-env.json`
-4) `./profiles.json`
-5) `./code-env.config.json`
-6) `~/.config/code-env/config.json`
+3) `~/.config/code-env/config.json`
+
+Use `codenv config` to print the path selected for the current directory.
+
+If nothing is found, `codenv add` writes to `~/.config/code-env/config.json`.
 
 ## Config format
 
 ```json
 {
-  "unset": ["OPENAI_BASE_URL", "OPENAI_API_KEY", "CODEX_PROVIDER", "ANTHROPIC_API_KEY", "CLAUDE_CODE_BASE_URL"],
+  "unset": [],
+  "defaultProfiles": {
+    "codex": "primary",
+    "claude": "default"
+  },
   "profiles": {
-    "codex-88": {
+    "p_a1b2c3": {
+      "name": "primary",
       "type": "codex",
-      "note": "OpenAI official",
+      "note": "Primary endpoint",
       "env": {
-        "OPENAI_BASE_URL": "https://api.openai.com/v1",
-        "OPENAI_API_KEY": "YOUR_API_KEY",
-        "CODEX_PROVIDER": "OpenAI"
+        "OPENAI_BASE_URL": "https://api.example.com/v1",
+        "OPENAI_API_KEY": "YOUR_API_KEY"
       },
-      "removeFiles": ["$HOME/.config/openai/auth.json"],
-      "commands": ["echo \"Switched to codex-88\""]
+      "removeFiles": ["$HOME/.config/example/auth.json"],
+      "commands": ["echo \"Switched to codex primary\""]
     }
   }
 }
 ```
 
 Notes:
-- `removeFiles` is optional; when present, `codenv use <profile>` emits `rm -f` lines for those paths.
-- `commands` is optional; any strings are emitted as-is.
-- `note` is shown in `codenv list` output.
-- `type` is optional; set to `codex` or `claude` (alias: `cc`) so you can use `codenv use <type> <name>`.
-- `codenv add` creates the config file if it does not exist (default: `./code-env.json`).
+- `unset`: global keys to clear. Type-specific defaults are applied only for the active type and won't clear the other type.
+- `defaultProfiles`: optional; map of `codex`/`claude` to profile name or key used by `codenv auto`.
+- `name`: human-facing profile name shown in `codenv list` and used by `codenv use <name>`.
+- `type`: optional; `codex` or `claude` (alias `cc`) for `codenv use <type> <name>` matching.
+- `note`: shown in `codenv list`.
+- `removeFiles`: optional; `codenv use` emits `rm -f` for each path. Codex profiles also remove `~/.codex/auth.json`.
+- `ANTHROPIC_AUTH_TOKEN`: when `ANTHROPIC_API_KEY` is set, `codenv use` also exports `ANTHROPIC_AUTH_TOKEN` with the same value.
+- `commands`: optional; emitted as-is in the switch script.
 
-## Fish shell
+## Security
 
-```fish
-codenv use codex-88 | source
+Your config contains API keys. Keep it private and out of public repositories.
+
+## Development
+
+```bash
+npm install
+npm run build
 ```

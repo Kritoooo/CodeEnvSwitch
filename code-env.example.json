@@ -1,42 +1,41 @@
 {
-  "unset": [
-    "OPENAI_BASE_URL",
-    "OPENAI_API_KEY",
-    "CODEX_PROVIDER",
-    "ANTHROPIC_API_KEY",
-    "CLAUDE_CODE_BASE_URL"
-  ],
+  "unset": [],
+  "defaultProfiles": {
+    "codex": "primary",
+    "claude": "default"
+  },
   "profiles": {
-    "codex-88": {
+    "p_a1b2c3": {
+      "name": "primary",
       "type": "codex",
-      "note": "OpenAI official",
+      "note": "Primary endpoint",
       "env": {
-        "OPENAI_BASE_URL": "https://api.openai.com/v1",
-        "OPENAI_API_KEY": "YOUR_API_KEY",
-        "CODEX_PROVIDER": "OpenAI"
+        "OPENAI_BASE_URL": "https://api.example.com/v1",
+        "OPENAI_API_KEY": "YOUR_API_KEY"
       },
       "removeFiles": [
-        "$HOME/.config/openai/auth.json"
+        "$HOME/.config/example/auth.json"
       ]
     },
-    "codex-mirror": {
+    "p_d4e5f6": {
+      "name": "secondary",
       "type": "codex",
-      "note": "AICodeMirror",
+      "note": "Secondary endpoint",
       "env": {
-        "OPENAI_BASE_URL": "https://api.aicodemirror.com/api/codex/backend-api/codex",
-        "OPENAI_API_KEY": "YOUR_API_KEY",
-        "CODEX_PROVIDER": "AICodeMirror"
+        "OPENAI_BASE_URL": "https://api.secondary.example.com/v1",
+        "OPENAI_API_KEY": "YOUR_API_KEY"
       },
       "removeFiles": [
-        "$HOME/.config/openai/auth.json"
+        "$HOME/.config/example/auth.json"
       ]
     },
-    "claude": {
+    "p_g7h8i9": {
+      "name": "default",
       "type": "claude",
-      "note": "Claude Code",
+      "note": "Default endpoint",
       "env": {
         "ANTHROPIC_API_KEY": "YOUR_API_KEY",
-        "CLAUDE_CODE_BASE_URL": "https://api.anthropic.com"
+        "ANTHROPIC_BASE_URL": "https://api.example.com"
       }
     }
   }
