@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "description": "Switch between Claude Code and Codex environment variables from a single CLI",
   "bin": {
-    "codenv": "bin/codenv.js"
+    "codenv": "bin/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

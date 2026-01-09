@@ -65,6 +65,8 @@ npm link
 
 > By default, `codenv use` only outputs shell commands. After running
 > `codenv init`, the shell wrapper applies them automatically.
+> The snippet also wraps `codex`/`claude` to bind sessions to profiles; use
+> `command codex` / `command claude` to bypass.
 
 ### Common commands
 
@@ -204,6 +206,17 @@ If nothing is found, `codenv add` writes to `~/.config/code-env/config.json`.
     "codex": "primary",
     "claude": "default"
   },
+  "codexStatusline": {
+    "command": ["codenv", "statusline", "--type", "codex", "--sync-usage"],
+    "showHints": false,
+    "updateIntervalMs": 300,
+    "timeoutMs": 1000
+  },
+  "claudeStatusline": {
+    "command": "codenv statusline --type claude --sync-usage",
+    "type": "command",
+    "padding": 0
+  },
   "profiles": {
     "p_a1b2c3": {
       "name": "primary",
@@ -223,6 +236,17 @@ If nothing is found, `codenv add` writes to `~/.config/code-env/config.json`.
 Notes:
 - `unset`: global keys to clear. Type-specific defaults are applied only for the active type and won't clear the other type.
 - `defaultProfiles`: optional; map of `codex`/`claude` to profile name or key used by `codenv auto`.
+- `codexStatusline`: optional; config to inject Codex TUI status line settings when launching `codex`.
+  - `command`: string or string[]; command passed to Codex `tui.status_line.command`.
+  - `showHints`: boolean; whether Codex footer hints are appended when the status line is active.
+  - `updateIntervalMs`: number; update interval in ms for the status line command.
+  - `timeoutMs`: number; timeout in ms for the status line command.
+  - `configPath`: optional; override `~/.codex/config.toml` (also supports `CODE_ENV_CODEX_CONFIG_PATH`).
+- `claudeStatusline`: optional; config to inject Claude Code statusLine settings when launching `claude`.
+  - `command`: string (or string[]; arrays are joined into a single command string).
+  - `type`: string; statusLine type (default: `command`).
+  - `padding`: number; statusLine padding (default: 0).
+  - `settingsPath`: optional; override `~/.claude/settings.json` (also supports `CODE_ENV_CLAUDE_SETTINGS_PATH`).
 - `name`: human-facing profile name shown in `codenv list` and used by `codenv use <name>`.
 - `type`: optional; `codex` or `claude` (alias `cc`) for `codenv use <type> <name>` matching.
 - `note`: shown in `codenv list`.

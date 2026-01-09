@@ -4,6 +4,17 @@
     "codex": "primary",
     "claude": "default"
   },
+  "codexStatusline": {
+    "command": ["codenv", "statusline", "--type", "codex", "--sync-usage"],
+    "showHints": false,
+    "updateIntervalMs": 300,
+    "timeoutMs": 1000
+  },
+  "claudeStatusline": {
+    "command": "codenv statusline --type claude --sync-usage",
+    "type": "command",
+    "padding": 0
+  },
   "profiles": {
     "p_a1b2c3": {
       "name": "primary",

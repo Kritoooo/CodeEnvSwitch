@@ -65,6 +65,8 @@ npm link
 
 > 默认情况下，`codenv use` 仅输出 shell 命令；执行 `codenv init` 后，
 > shell 包装函数会自动在当前终端生效。
+> 该片段还会包装 `codex`/`claude` 以绑定会话到 profile；如需绕过，
+> 可使用 `command codex` / `command claude`。
 
 ### 常用命令
 
@@ -203,6 +205,17 @@ codenv use codex primary | source
     "codex": "primary",
     "claude": "default"
   },
+  "codexStatusline": {
+    "command": ["codenv", "statusline", "--type", "codex", "--sync-usage"],
+    "showHints": false,
+    "updateIntervalMs": 300,
+    "timeoutMs": 1000
+  },
+  "claudeStatusline": {
+    "command": "codenv statusline --type claude --sync-usage",
+    "type": "command",
+    "padding": 0
+  },
   "profiles": {
     "p_a1b2c3": {
       "name": "primary",
@@ -222,6 +235,17 @@ codenv use codex primary | source
 说明：
 - `unset`：全局需要清理的环境变量。按 type 的默认清理键只会对当前 type 生效，不会影响其他 type。
 - `defaultProfiles`：可选；`codex`/`claude` 对应的默认 profile 名称或 key，供 `codenv auto` 使用。
+- `codexStatusline`：可选；在启动 `codex` 时写入 Codex TUI status line 配置。
+  - `command`：字符串或字符串数组；写入 Codex 的 `tui.status_line.command`。
+  - `showHints`：布尔值；状态栏激活时是否拼接 footer 提示。
+  - `updateIntervalMs`：数字；状态栏命令的刷新间隔（毫秒）。
+  - `timeoutMs`：数字；状态栏命令超时（毫秒）。
+  - `configPath`：可选；覆盖 `~/.codex/config.toml`（也可用 `CODE_ENV_CODEX_CONFIG_PATH`）。
+- `claudeStatusline`：可选；在启动 `claude` 时写入 Claude Code statusLine 配置。
+  - `command`：字符串（或字符串数组；数组会被拼接成单个命令字符串）。
+  - `type`：字符串；statusLine 类型（默认 `command`）。
+  - `padding`：数字；statusLine padding（默认 0）。
+  - `settingsPath`：可选；覆盖 `~/.claude/settings.json`（也可用 `CODE_ENV_CLAUDE_SETTINGS_PATH`）。
 - `name`：用于展示的 profile 名称，`codenv list` 与 `codenv use <name>` 会使用它。
 - `type`：可选，`codex` 或 `claude`（别名 `cc`），便于用 `codenv use <type> <name>` 匹配。
 - `note`：显示在 `codenv list` 输出中。
