@@ -40,9 +40,20 @@ interface UsageStateEntry {
     cwd: string | null;
 }
 
+interface UsageSessionEntry {
+    type: ProfileType;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    startTs: string | null;
+    endTs: string | null;
+    cwd: string | null;
+}
+
 interface UsageStateFile {
     version: number;
     files: Record<string, UsageStateEntry>;
+    sessions?: Record<string, UsageSessionEntry>;
 }
 
 interface ProfileLogEntry {
@@ -76,6 +87,12 @@ interface SessionStats {
     endTs: string | null;
     cwd: string | null;
     sessionId: string | null;
+}
+
+interface UsageTotalsInput {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
 }
 
 function resolveDefaultConfigDir(configPath: string | null): string {
@@ -172,6 +189,18 @@ function normalizeUsageType(type: string | null | undefined): string | null {
     return trimmed ? trimmed : null;
 }
 
+function buildSessionKey(type: ProfileType | null, sessionId: string): string {
+    const normalized = normalizeUsageType(type || "");
+    return normalized ? `${normalized}::${sessionId}` : sessionId;
+}
+
+function toFiniteNumber(value: number | null | undefined): number | null {
+    if (value === null || value === undefined) return null;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return num;
+}
+
 function buildUsageLookupKey(
     type: string | null | undefined,
     profileId: string | null | undefined
@@ -210,6 +239,81 @@ export function resolveUsageTotalsForProfile(
         (nameLookup && totals.byName.get(nameLookup)) ||
         null
     );
+}
+
+export function syncUsageFromStatuslineInput(
+    config: Config,
+    configPath: string | null,
+    type: ProfileType | null,
+    profileKey: string | null,
+    profileName: string | null,
+    sessionId: string | null,
+    totals: UsageTotalsInput | null,
+    cwd: string | null
+): void {
+    if (!sessionId) return;
+    if (!totals) return;
+    if (!profileKey && !profileName) return;
+    const normalizedType = normalizeType(type || "");
+    if (!normalizedType) return;
+    const usagePath = getUsagePath(config, configPath);
+    if (!usagePath) return;
+    const inputTokens = toFiniteNumber(totals.inputTokens) ?? 0;
+    const outputTokens = toFiniteNumber(totals.outputTokens) ?? 0;
+    const totalTokens =
+        toFiniteNumber(totals.totalTokens) ?? inputTokens + outputTokens;
+    if (!Number.isFinite(totalTokens)) return;
+
+    const statePath = getUsageStatePath(usagePath, config);
+    const lockPath = `${statePath}.lock`;
+    const lockFd = acquireLock(lockPath);
+    if (lockFd === null) return;
+    try {
+        const state = readUsageState(statePath);
+        const sessions = state.sessions || {};
+        const key = buildSessionKey(normalizedType, sessionId);
+        const prev = sessions[key];
+        const prevInput = prev ? prev.inputTokens : 0;
+        const prevOutput = prev ? prev.outputTokens : 0;
+        const prevTotal = prev ? prev.totalTokens : 0;
+
+        let deltaInput = inputTokens - prevInput;
+        let deltaOutput = outputTokens - prevOutput;
+        let deltaTotal = totalTokens - prevTotal;
+        if (deltaTotal < 0 || deltaInput < 0 || deltaOutput < 0) {
+            deltaInput = inputTokens;
+            deltaOutput = outputTokens;
+            deltaTotal = totalTokens;
+        }
+
+        if (deltaTotal > 0) {
+            const record: UsageRecord = {
+                ts: new Date().toISOString(),
+                type: normalizedType,
+                profileKey: profileKey || null,
+                profileName: profileName || null,
+                inputTokens: deltaInput,
+                outputTokens: deltaOutput,
+                totalTokens: deltaTotal,
+            };
+            appendUsageRecord(usagePath, record);
+        }
+
+        const now = new Date().toISOString();
+        sessions[key] = {
+            type: normalizedType,
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            startTs: prev ? prev.startTs : now,
+            endTs: now,
+            cwd: cwd || (prev ? prev.cwd : null),
+        };
+        state.sessions = sessions;
+        writeUsageState(statePath, state);
+    } finally {
+        releaseLock(lockPath, lockFd);
+    }
 }
 
 export function logProfileUse(
@@ -424,19 +528,21 @@ function resolveProfileForSession(
 
 function readUsageState(statePath: string): UsageStateFile {
     if (!statePath || !fs.existsSync(statePath)) {
-        return { version: 1, files: {} };
+        return { version: 1, files: {}, sessions: {} };
     }
     try {
         const raw = fs.readFileSync(statePath, "utf8");
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object") {
-            return { version: 1, files: {} };
+            return { version: 1, files: {}, sessions: {} };
         }
         const files =
             parsed.files && typeof parsed.files === "object" ? parsed.files : {};
-        return { version: 1, files };
+        const sessions =
+            parsed.sessions && typeof parsed.sessions === "object" ? parsed.sessions : {};
+        return { version: 1, files, sessions };
     } catch {
-        return { version: 1, files: {} };
+        return { version: 1, files: {}, sessions: {} };
     }
 }
 
@@ -754,6 +860,7 @@ export function syncUsageFromSessions(
 
         const state = readUsageState(statePath);
         const files = state.files || {};
+        const sessions = state.sessions || {};
         const codexFiles = collectSessionFiles(getCodexSessionsPath(config));
         const claudeFiles = collectSessionFiles(getClaudeSessionsPath(config));
 
@@ -786,16 +893,34 @@ export function syncUsageFromSessions(
                 stats.sessionId
             );
             if (!resolved.match) return;
+            const sessionKey =
+                stats.sessionId ? buildSessionKey(type, stats.sessionId) : null;
+            const sessionPrev = sessionKey ? sessions[sessionKey] : null;
             const prevInput = prev ? prev.inputTokens : 0;
             const prevOutput = prev ? prev.outputTokens : 0;
             const prevTotal = prev ? prev.totalTokens : 0;
-            let deltaInput = stats.inputTokens - prevInput;
-            let deltaOutput = stats.outputTokens - prevOutput;
-            let deltaTotal = stats.totalTokens - prevTotal;
+            const prevInputMax = sessionPrev
+                ? Math.max(prevInput, sessionPrev.inputTokens)
+                : prevInput;
+            const prevOutputMax = sessionPrev
+                ? Math.max(prevOutput, sessionPrev.outputTokens)
+                : prevOutput;
+            const prevTotalMax = sessionPrev
+                ? Math.max(prevTotal, sessionPrev.totalTokens)
+                : prevTotal;
+            let deltaInput = stats.inputTokens - prevInputMax;
+            let deltaOutput = stats.outputTokens - prevOutputMax;
+            let deltaTotal = stats.totalTokens - prevTotalMax;
             if (deltaTotal < 0 || deltaInput < 0 || deltaOutput < 0) {
-                deltaInput = stats.inputTokens;
-                deltaOutput = stats.outputTokens;
-                deltaTotal = stats.totalTokens;
+                if (sessionPrev) {
+                    deltaInput = 0;
+                    deltaOutput = 0;
+                    deltaTotal = 0;
+                } else {
+                    deltaInput = stats.inputTokens;
+                    deltaOutput = stats.outputTokens;
+                    deltaTotal = stats.totalTokens;
+                }
             }
             if (deltaTotal > 0) {
                 const record: UsageRecord = {
@@ -808,6 +933,26 @@ export function syncUsageFromSessions(
                     totalTokens: deltaTotal,
                 };
                 appendUsageRecord(usagePath, record);
+            }
+            if (sessionKey) {
+                const nextInput = sessionPrev
+                    ? Math.max(sessionPrev.inputTokens, stats.inputTokens)
+                    : stats.inputTokens;
+                const nextOutput = sessionPrev
+                    ? Math.max(sessionPrev.outputTokens, stats.outputTokens)
+                    : stats.outputTokens;
+                const nextTotal = sessionPrev
+                    ? Math.max(sessionPrev.totalTokens, stats.totalTokens)
+                    : stats.totalTokens;
+                sessions[sessionKey] = {
+                    type,
+                    inputTokens: nextInput,
+                    outputTokens: nextOutput,
+                    totalTokens: nextTotal,
+                    startTs: sessionPrev ? sessionPrev.startTs : stats.startTs,
+                    endTs: stats.endTs || (sessionPrev ? sessionPrev.endTs : null),
+                    cwd: stats.cwd || (sessionPrev ? sessionPrev.cwd : null),
+                };
             }
             files[filePath] = {
                 mtimeMs: stat.mtimeMs,
@@ -826,6 +971,7 @@ export function syncUsageFromSessions(
         for (const filePath of claudeFiles) processFile(filePath, "claude");
 
         state.files = files;
+        state.sessions = sessions;
         writeUsageState(statePath, state);
     } finally {
         releaseLock(lockPath, lockFd);

@@ -11,6 +11,7 @@ import {
     formatTokenCount,
     readUsageTotalsIndex,
     resolveUsageTotalsForProfile,
+    syncUsageFromStatuslineInput,
 } from "../usage";
 
 interface StatuslineInputProfile {
@@ -24,6 +25,28 @@ interface StatuslineInputUsage {
     totalTokens?: number;
     inputTokens?: number;
     outputTokens?: number;
+}
+
+interface StatuslineInputContextWindowUsage {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheCreationInputTokens?: number;
+    cacheReadInputTokens?: number;
+}
+
+interface StatuslineInputContextWindow {
+    current_usage?: StatuslineInputContextWindowUsage | null;
+    total_input_tokens?: number;
+    total_output_tokens?: number;
+    context_window_size?: number;
+    currentUsage?: StatuslineInputContextWindowUsage | null;
+    totalInputTokens?: number;
+    totalOutputTokens?: number;
+    contextWindowSize?: number;
 }
 
 interface StatuslineInputModel {
@@ -45,6 +68,8 @@ interface StatuslineInput {
     review_mode?: boolean;
     context_window_percent?: number;
     context_window_used_tokens?: number;
+    context_window?: StatuslineInputContextWindow | Record<string, unknown> | null;
+    contextWindow?: StatuslineInputContextWindow | Record<string, unknown> | null;
     workspace?: {
         current_dir?: string;
         project_dir?: string;
@@ -53,6 +78,7 @@ interface StatuslineInput {
     version?: string;
     output_style?: { name?: string };
     session_id?: string;
+    sessionId?: string;
     transcript_path?: string;
     hook_event_name?: string;
 }
@@ -62,6 +88,12 @@ interface StatuslineUsage {
     totalTokens: number | null;
     inputTokens: number | null;
     outputTokens: number | null;
+}
+
+interface StatuslineUsageTotals {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
 }
 
 interface GitStatus {
@@ -218,45 +250,268 @@ function getInputUsage(input: StatuslineInput | null): StatuslineInputUsage | nu
         return input.usage as StatuslineInputUsage;
     }
     const tokenUsage = input.token_usage;
-    if (tokenUsage === null || tokenUsage === undefined) return null;
-    if (typeof tokenUsage === "number") {
-        return {
-            todayTokens: null,
-            totalTokens: coerceNumber(tokenUsage),
-            inputTokens: null,
-            outputTokens: null,
-        };
-    }
-    if (isRecord(tokenUsage)) {
-        const record = tokenUsage as Record<string, unknown>;
-        return {
-            todayTokens:
+    if (tokenUsage !== null && tokenUsage !== undefined) {
+        if (typeof tokenUsage === "number") {
+            return {
+                todayTokens: null,
+                totalTokens: coerceNumber(tokenUsage),
+                inputTokens: null,
+                outputTokens: null,
+            };
+        }
+        if (isRecord(tokenUsage)) {
+            const record = tokenUsage as Record<string, unknown>;
+            const todayTokens =
                 firstNumber(
                     record.todayTokens,
                     record.today,
                     record.today_tokens,
                     record.daily,
                     record.daily_tokens
-                ) ?? null,
-            totalTokens:
+                ) ?? null;
+            const totalTokens =
                 firstNumber(
                     record.totalTokens,
                     record.total,
                     record.total_tokens
-                ) ?? null,
-            inputTokens:
+                ) ?? null;
+            const inputTokens =
                 firstNumber(
                     record.inputTokens,
                     record.input,
                     record.input_tokens
-                ) ?? null,
-            outputTokens:
+                ) ?? null;
+            const outputTokens =
                 firstNumber(
                     record.outputTokens,
                     record.output,
                     record.output_tokens
-                ) ?? null,
+                ) ?? null;
+            const cacheRead =
+                firstNumber(
+                    record.cache_read_input_tokens,
+                    record.cacheReadInputTokens,
+                    record.cache_read,
+                    record.cacheRead
+                ) ?? null;
+            const cacheWrite =
+                firstNumber(
+                    record.cache_creation_input_tokens,
+                    record.cacheCreationInputTokens,
+                    record.cache_write_input_tokens,
+                    record.cacheWriteInputTokens,
+                    record.cache_write,
+                    record.cacheWrite
+                ) ?? null;
+            if (
+                todayTokens === null &&
+                totalTokens === null &&
+                inputTokens === null &&
+                outputTokens === null &&
+                cacheRead === null &&
+                cacheWrite === null
+            ) {
+                return null;
+            }
+            const hasCacheTokens = cacheRead !== null || cacheWrite !== null;
+            const computedTotal = hasCacheTokens
+                ? (inputTokens || 0) +
+                  (outputTokens || 0) +
+                  (cacheRead || 0) +
+                  (cacheWrite || 0)
+                : null;
+            const resolvedTodayTokens = hasCacheTokens
+                ? todayTokens ?? totalTokens ?? computedTotal
+                : todayTokens;
+            return {
+                todayTokens: resolvedTodayTokens,
+                totalTokens: totalTokens ?? null,
+                inputTokens,
+                outputTokens,
+            };
+        }
+    }
+    const contextWindow = isRecord(input.context_window)
+        ? (input.context_window as Record<string, unknown>)
+        : isRecord(input.contextWindow)
+        ? (input.contextWindow as Record<string, unknown>)
+        : null;
+    if (!contextWindow) return null;
+    const totalInputTokens =
+        firstNumber(
+            contextWindow.total_input_tokens,
+            contextWindow.totalInputTokens
+        ) ?? null;
+    const totalOutputTokens =
+        firstNumber(
+            contextWindow.total_output_tokens,
+            contextWindow.totalOutputTokens
+        ) ?? null;
+    if (totalInputTokens !== null || totalOutputTokens !== null) {
+        return {
+            todayTokens: null,
+            totalTokens: null,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
         };
+    }
+    const currentUsage = isRecord(contextWindow.current_usage)
+        ? (contextWindow.current_usage as Record<string, unknown>)
+        : isRecord(contextWindow.currentUsage)
+        ? (contextWindow.currentUsage as Record<string, unknown>)
+        : null;
+    if (!currentUsage) return null;
+    const inputTokens =
+        firstNumber(
+            currentUsage.input_tokens,
+            currentUsage.inputTokens
+        ) ?? null;
+    const outputTokens =
+        firstNumber(
+            currentUsage.output_tokens,
+            currentUsage.outputTokens
+        ) ?? null;
+    const cacheRead =
+        firstNumber(
+            currentUsage.cache_read_input_tokens,
+            currentUsage.cacheReadInputTokens
+        ) ?? null;
+    const cacheWrite =
+        firstNumber(
+            currentUsage.cache_creation_input_tokens,
+            currentUsage.cacheCreationInputTokens
+        ) ?? null;
+    if (
+        inputTokens === null &&
+        outputTokens === null &&
+        cacheRead === null &&
+        cacheWrite === null
+    ) {
+        return null;
+    }
+    const totalTokens =
+        (inputTokens || 0) +
+        (outputTokens || 0) +
+        (cacheRead || 0) +
+        (cacheWrite || 0);
+    return {
+        todayTokens: totalTokens,
+        totalTokens: null,
+        inputTokens,
+        outputTokens,
+    };
+}
+
+function getSessionId(input: StatuslineInput | null): string | null {
+    if (!input) return null;
+    return firstNonEmpty(input.session_id, input.sessionId);
+}
+
+function parseUsageTotalsRecord(
+    record: Record<string, unknown>
+): StatuslineUsageTotals | null {
+    const inputTokens =
+        firstNumber(
+            record.inputTokens,
+            record.input,
+            record.input_tokens
+        ) ?? null;
+    const outputTokens =
+        firstNumber(
+            record.outputTokens,
+            record.output,
+            record.output_tokens
+        ) ?? null;
+    const totalTokens =
+        firstNumber(
+            record.totalTokens,
+            record.total,
+            record.total_tokens
+        ) ?? null;
+    const cacheRead =
+        firstNumber(
+            record.cache_read_input_tokens,
+            record.cacheReadInputTokens,
+            record.cache_read,
+            record.cacheRead
+        ) ?? null;
+    const cacheWrite =
+        firstNumber(
+            record.cache_creation_input_tokens,
+            record.cacheCreationInputTokens,
+            record.cache_write_input_tokens,
+            record.cacheWriteInputTokens,
+            record.cache_write,
+            record.cacheWrite
+        ) ?? null;
+    let computedTotal: number | null = null;
+    if (
+        inputTokens !== null ||
+        outputTokens !== null ||
+        cacheRead !== null ||
+        cacheWrite !== null
+    ) {
+        computedTotal =
+            (inputTokens || 0) +
+            (outputTokens || 0) +
+            (cacheRead || 0) +
+            (cacheWrite || 0);
+    }
+    const resolvedTotal = totalTokens ?? computedTotal;
+    if (
+        inputTokens === null &&
+        outputTokens === null &&
+        resolvedTotal === null
+    ) {
+        return null;
+    }
+    return {
+        inputTokens,
+        outputTokens,
+        totalTokens: resolvedTotal,
+    };
+}
+
+function getUsageTotalsFromInput(
+    input: StatuslineInput | null
+): StatuslineUsageTotals | null {
+    if (!input) return null;
+    const contextWindow = isRecord(input.context_window)
+        ? (input.context_window as Record<string, unknown>)
+        : isRecord(input.contextWindow)
+        ? (input.contextWindow as Record<string, unknown>)
+        : null;
+    if (contextWindow) {
+        const totalInputTokens =
+            firstNumber(
+                contextWindow.total_input_tokens,
+                contextWindow.totalInputTokens
+            ) ?? null;
+        const totalOutputTokens =
+            firstNumber(
+                contextWindow.total_output_tokens,
+                contextWindow.totalOutputTokens
+            ) ?? null;
+        if (totalInputTokens !== null || totalOutputTokens !== null) {
+            return {
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                totalTokens: (totalInputTokens || 0) + (totalOutputTokens || 0),
+            };
+        }
+    }
+    if (typeof input.token_usage === "number") {
+        return {
+            inputTokens: null,
+            outputTokens: null,
+            totalTokens: coerceNumber(input.token_usage),
+        };
+    }
+    if (isRecord(input.token_usage)) {
+        return parseUsageTotalsRecord(input.token_usage as Record<string, unknown>);
+    }
+    if (isRecord(input.usage)) {
+        return parseUsageTotalsRecord(input.usage as Record<string, unknown>);
     }
     return null;
 }
@@ -264,6 +519,24 @@ function getInputUsage(input: StatuslineInput | null): StatuslineInputUsage | nu
 function getContextUsedTokens(input: StatuslineInput | null): number | null {
     if (!input) return null;
     return coerceNumber(input.context_window_used_tokens);
+}
+
+function normalizeInputUsage(
+    inputUsage: StatuslineInputUsage | null
+): StatuslineUsage | null {
+    if (!inputUsage) return null;
+    const usage: StatuslineUsage = {
+        todayTokens: coerceNumber(inputUsage.todayTokens),
+        totalTokens: coerceNumber(inputUsage.totalTokens),
+        inputTokens: coerceNumber(inputUsage.inputTokens),
+        outputTokens: coerceNumber(inputUsage.outputTokens),
+    };
+    const hasUsage =
+        usage.todayTokens !== null ||
+        usage.totalTokens !== null ||
+        usage.inputTokens !== null ||
+        usage.outputTokens !== null;
+    return hasUsage ? usage : null;
 }
 
 function getContextLeftPercent(
@@ -496,7 +769,7 @@ export function buildStatuslineResult(
     let type = normalizeTypeValue(typeCandidate);
     const envProfile = resolveEnvProfile(type);
 
-    let profileKey = firstNonEmpty(
+    const profileKey = firstNonEmpty(
         args.profileKey,
         envProfile.key,
         inputProfile ? inputProfile.key : null
@@ -529,6 +802,22 @@ export function buildStatuslineResult(
         stdinInput ? stdinInput.cwd : null,
         process.cwd()
     )!;
+
+    const sessionId = getSessionId(stdinInput);
+    const stdinUsageTotals = getUsageTotalsFromInput(stdinInput);
+    if (args.syncUsage && sessionId && stdinUsageTotals) {
+        const usageType = normalizeType(type || "");
+        syncUsageFromStatuslineInput(
+            config,
+            configPath,
+            usageType,
+            profileKey,
+            profileName,
+            sessionId,
+            stdinUsageTotals,
+            cwd
+        );
+    }
 
     const model = firstNonEmpty(
         args.model,
@@ -565,7 +854,12 @@ export function buildStatuslineResult(
         usage.inputTokens !== null ||
         usage.outputTokens !== null;
 
+    const stdinUsage = normalizeInputUsage(getInputUsage(stdinInput));
+
     let finalUsage: StatuslineUsage | null = hasExplicitUsage ? usage : null;
+    if (!finalUsage) {
+        finalUsage = stdinUsage;
+    }
     if (!finalUsage) {
         finalUsage = resolveUsageFromRecords(
             config,
