@@ -15,6 +15,61 @@
     "type": "command",
     "padding": 0
   },
+  "pricing": {
+    "models": {
+      "Claude Sonnet 4.5": {
+        "input": 3.0,
+        "output": 15.0,
+        "cacheWrite": 3.75,
+        "cacheRead": 0.3,
+        "description": "Balanced performance and speed for daily use."
+      },
+      "Claude Opus 4.5": {
+        "input": 5.0,
+        "output": 25.0,
+        "cacheWrite": 6.25,
+        "cacheRead": 0.5,
+        "description": "Most capable model for agents and coding."
+      },
+      "Claude Haiku 4.5": {
+        "input": 1.0,
+        "output": 5.0,
+        "cacheWrite": 1.25,
+        "cacheRead": 0.1,
+        "description": "Fast responses for lightweight tasks."
+      },
+      "gpt-5.1": {
+        "input": 1.25,
+        "output": 10.0,
+        "cacheRead": 0.125,
+        "description": "Base model for daily development work."
+      },
+      "gpt-5.1-codex": {
+        "input": 1.25,
+        "output": 10.0,
+        "cacheRead": 0.125,
+        "description": "Code-focused model for programming workflows."
+      },
+      "gpt-5.1-codex-max": {
+        "input": 1.25,
+        "output": 10.0,
+        "cacheRead": 0.125,
+        "description": "Flagship code model for complex projects."
+      },
+      "gpt-5.2": {
+        "input": 1.75,
+        "output": 14.0,
+        "cacheRead": 0.175,
+        "description": "Latest flagship model with improved performance."
+      },
+      "gpt-5.2-codex": {
+        "input": 1.75,
+        "output": 14.0,
+        "cacheRead": 0.175,
+        "description": "Latest flagship code model."
+      }
+    }
+  },
   "profiles": {
     "p_a1b2c3": {
       "name": "primary",

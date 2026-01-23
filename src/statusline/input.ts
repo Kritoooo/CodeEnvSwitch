@@ -7,7 +7,9 @@ import type {
     StatuslineInputProfile,
     StatuslineInputUsage,
 } from "./types";
-import { coerceNumber, firstNonEmpty, firstNumber, isRecord } from "./utils";
+import { coerceNumber, firstNonEmpty, isRecord } from "./utils";
+import { getClaudeInputUsage } from "./usage/claude";
+import { getCodexInputUsage } from "./usage/codex";
 
 export function readStdinJson(): StatuslineInput | null {
     if (process.stdin.isTTY) return null;
@@ -83,162 +85,19 @@ export function getInputProfile(
     return input.profile as StatuslineInputProfile;
 }
 
-export function getInputUsage(input: StatuslineInput | null): StatuslineInputUsage | null {
+export function getInputUsage(
+    input: StatuslineInput | null,
+    type: string | null
+): StatuslineInputUsage | null {
     if (!input) return null;
-    if (isRecord(input.usage)) {
-        return input.usage as StatuslineInputUsage;
+    const normalized = normalizeTypeValue(type);
+    if (normalized === "codex") {
+        return getCodexInputUsage(input);
     }
-    const tokenUsage = input.token_usage;
-    if (tokenUsage !== null && tokenUsage !== undefined) {
-        if (typeof tokenUsage === "number") {
-            return {
-                todayTokens: null,
-                totalTokens: coerceNumber(tokenUsage),
-                inputTokens: null,
-                outputTokens: null,
-            };
-        }
-        if (isRecord(tokenUsage)) {
-            const record = tokenUsage as Record<string, unknown>;
-            const todayTokens =
-                firstNumber(
-                    record.todayTokens,
-                    record.today,
-                    record.today_tokens,
-                    record.daily,
-                    record.daily_tokens
-                ) ?? null;
-            const totalTokens =
-                firstNumber(
-                    record.totalTokens,
-                    record.total,
-                    record.total_tokens
-                ) ?? null;
-            const inputTokens =
-                firstNumber(
-                    record.inputTokens,
-                    record.input,
-                    record.input_tokens
-                ) ?? null;
-            const outputTokens =
-                firstNumber(
-                    record.outputTokens,
-                    record.output,
-                    record.output_tokens
-                ) ?? null;
-            const cacheRead =
-                firstNumber(
-                    record.cache_read_input_tokens,
-                    record.cacheReadInputTokens,
-                    record.cache_read,
-                    record.cacheRead
-                ) ?? null;
-            const cacheWrite =
-                firstNumber(
-                    record.cache_creation_input_tokens,
-                    record.cacheCreationInputTokens,
-                    record.cache_write_input_tokens,
-                    record.cacheWriteInputTokens,
-                    record.cache_write,
-                    record.cacheWrite
-                ) ?? null;
-            if (
-                todayTokens === null &&
-                totalTokens === null &&
-                inputTokens === null &&
-                outputTokens === null &&
-                cacheRead === null &&
-                cacheWrite === null
-            ) {
-                return null;
-            }
-            const hasCacheTokens = cacheRead !== null || cacheWrite !== null;
-            const computedTotal = hasCacheTokens
-                ? (inputTokens || 0) +
-                  (outputTokens || 0) +
-                  (cacheRead || 0) +
-                  (cacheWrite || 0)
-                : null;
-            const resolvedTodayTokens = hasCacheTokens
-                ? todayTokens ?? totalTokens ?? computedTotal
-                : todayTokens;
-            return {
-                todayTokens: resolvedTodayTokens,
-                totalTokens: totalTokens ?? null,
-                inputTokens,
-                outputTokens,
-            };
-        }
+    if (normalized === "claude") {
+        return getClaudeInputUsage(input);
     }
-    const contextWindow = isRecord(input.context_window)
-        ? (input.context_window as Record<string, unknown>)
-        : isRecord(input.contextWindow)
-        ? (input.contextWindow as Record<string, unknown>)
-        : null;
-    if (!contextWindow) return null;
-    const totalInputTokens =
-        firstNumber(
-            contextWindow.total_input_tokens,
-            contextWindow.totalInputTokens
-        ) ?? null;
-    const totalOutputTokens =
-        firstNumber(
-            contextWindow.total_output_tokens,
-            contextWindow.totalOutputTokens
-        ) ?? null;
-    if (totalInputTokens !== null || totalOutputTokens !== null) {
-        return {
-            todayTokens: null,
-            totalTokens: null,
-            inputTokens: totalInputTokens,
-            outputTokens: totalOutputTokens,
-        };
-    }
-    const currentUsage = isRecord(contextWindow.current_usage)
-        ? (contextWindow.current_usage as Record<string, unknown>)
-        : isRecord(contextWindow.currentUsage)
-        ? (contextWindow.currentUsage as Record<string, unknown>)
-        : null;
-    if (!currentUsage) return null;
-    const inputTokens =
-        firstNumber(
-            currentUsage.input_tokens,
-            currentUsage.inputTokens
-        ) ?? null;
-    const outputTokens =
-        firstNumber(
-            currentUsage.output_tokens,
-            currentUsage.outputTokens
-        ) ?? null;
-    const cacheRead =
-        firstNumber(
-            currentUsage.cache_read_input_tokens,
-            currentUsage.cacheReadInputTokens
-        ) ?? null;
-    const cacheWrite =
-        firstNumber(
-            currentUsage.cache_creation_input_tokens,
-            currentUsage.cacheCreationInputTokens
-        ) ?? null;
-    if (
-        inputTokens === null &&
-        outputTokens === null &&
-        cacheRead === null &&
-        cacheWrite === null
-    ) {
-        return null;
-    }
-    const totalTokens =
-        (inputTokens || 0) +
-        (outputTokens || 0) +
-        (cacheRead || 0) +
-        (cacheWrite || 0);
-    return {
-        todayTokens: totalTokens,
-        totalTokens: null,
-        inputTokens,
-        outputTokens,
-    };
+    return getCodexInputUsage(input) || getClaudeInputUsage(input);
 }
 
 export function getSessionId(input: StatuslineInput | null): string | null {

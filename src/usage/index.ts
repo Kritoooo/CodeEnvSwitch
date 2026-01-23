@@ -4,28 +4,53 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import type { Config, ProfileType } from "../types";
+import type { Config, Profile, ProfileType } from "../types";
 import { resolvePath } from "../shell/utils";
 import { normalizeType, inferProfileType, getProfileDisplayName } from "../profile/type";
+import { calculateUsageCost, resolvePricingForProfile } from "./pricing";
 
 interface UsageRecord {
     ts: string;
     type: string;
     profileKey: string | null;
     profileName: string | null;
+    model: string | null;
+    sessionId?: string | null;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     totalTokens: number;
 }
 
 interface UsageTotals {
     today: number;
     total: number;
+    todayInput: number;
+    totalInput: number;
+    todayOutput: number;
+    totalOutput: number;
+    todayCacheRead: number;
+    totalCacheRead: number;
+    todayCacheWrite: number;
+    totalCacheWrite: number;
 }
 
 interface UsageTotalsIndex {
     byKey: Map<string, UsageTotals>;
     byName: Map<string, UsageTotals>;
+}
+
+interface UsageCostTotals {
+    today: number;
+    total: number;
+    todayTokens: number;
+    totalTokens: number;
+}
+
+interface UsageCostIndex {
+    byKey: Map<string, UsageCostTotals>;
+    byName: Map<string, UsageCostTotals>;
 }
 
 interface UsageStateEntry {
@@ -34,20 +59,26 @@ interface UsageStateEntry {
     type: ProfileType;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     totalTokens: number;
     startTs: string | null;
     endTs: string | null;
     cwd: string | null;
+    model?: string | null;
 }
 
 interface UsageSessionEntry {
     type: ProfileType;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     totalTokens: number;
     startTs: string | null;
     endTs: string | null;
     cwd: string | null;
+    model?: string | null;
 }
 
 interface UsageStateFile {
@@ -82,17 +113,44 @@ interface ProfileResolveResult {
 interface SessionStats {
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     totalTokens: number;
     startTs: string | null;
     endTs: string | null;
     cwd: string | null;
     sessionId: string | null;
+    model: string | null;
 }
 
 interface UsageTotalsInput {
     inputTokens: number | null;
     outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
     totalTokens: number | null;
+}
+
+function resolveProfileForRecord(
+    config: Config,
+    type: string | null,
+    record: UsageRecord
+): Profile | null {
+    if (record.profileKey && config.profiles && config.profiles[record.profileKey]) {
+        return config.profiles[record.profileKey];
+    }
+    if (record.profileName && config.profiles) {
+        const matches = Object.entries(config.profiles).find(([key, entry]) => {
+            const displayName = getProfileDisplayName(key, entry, type || undefined);
+            return (
+                displayName === record.profileName ||
+                entry.name === record.profileName ||
+                key === record.profileName
+            );
+        });
+        if (matches) return matches[1];
+    }
+    return null;
 }
 
 function resolveDefaultConfigDir(configPath: string | null): string {
@@ -141,40 +199,175 @@ export function formatTokenCount(value: number | null | undefined): string {
     return `${(value / 1_000_000_000).toFixed(2)}B`;
 }
 
+function createUsageTotals(): UsageTotals {
+    return {
+        today: 0,
+        total: 0,
+        todayInput: 0,
+        totalInput: 0,
+        todayOutput: 0,
+        totalOutput: 0,
+        todayCacheRead: 0,
+        totalCacheRead: 0,
+        todayCacheWrite: 0,
+        totalCacheWrite: 0,
+    };
+}
+
+function createUsageCostTotals(): UsageCostTotals {
+    return { today: 0, total: 0, todayTokens: 0, totalTokens: 0 };
+}
+
+function toUsageNumber(value: number | null | undefined): number {
+    const num = Number(value ?? 0);
+    return Number.isFinite(num) ? num : 0;
+}
+
+function getTodayWindow(): { startMs: number; endMs: number } {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const startMs = todayStart.getTime();
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+    return { startMs, endMs: tomorrowStart.getTime() };
+}
+
+function isTimestampInWindow(
+    ts: string,
+    startMs: number,
+    endMs: number
+): boolean {
+    if (!ts) return false;
+    const time = new Date(ts).getTime();
+    if (Number.isNaN(time)) return false;
+    return time >= startMs && time < endMs;
+}
+
 export function buildUsageTotals(records: UsageRecord[]): UsageTotalsIndex {
     const byKey = new Map<string, UsageTotals>();
     const byName = new Map<string, UsageTotals>();
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayStartMs = todayStart.getTime();
-    const tomorrowStart = new Date(todayStart);
-    tomorrowStart.setDate(todayStart.getDate() + 1);
-    const tomorrowStartMs = tomorrowStart.getTime();
+    const { startMs, endMs } = getTodayWindow();
 
     const isToday = (ts: string) => {
-        if (!ts) return false;
-        const time = new Date(ts).getTime();
-        if (Number.isNaN(time)) return false;
-        return time >= todayStartMs && time < tomorrowStartMs;
+        return isTimestampInWindow(ts, startMs, endMs);
     };
 
-    const addTotals = (map: Map<string, UsageTotals>, key: string, amount: number, ts: string) => {
+    const addTotals = (
+        map: Map<string, UsageTotals>,
+        key: string,
+        amounts: {
+            total: number;
+            input: number;
+            output: number;
+            cacheRead: number;
+            cacheWrite: number;
+        },
+        ts: string
+    ) => {
         if (!key) return;
-        const current = map.get(key) || { today: 0, total: 0 };
-        current.total += amount;
-        if (isToday(ts)) current.today += amount;
+        const current = map.get(key) || createUsageTotals();
+        current.total += amounts.total;
+        current.totalInput += amounts.input;
+        current.totalOutput += amounts.output;
+        current.totalCacheRead += amounts.cacheRead;
+        current.totalCacheWrite += amounts.cacheWrite;
+        if (isToday(ts)) {
+            current.today += amounts.total;
+            current.todayInput += amounts.input;
+            current.todayOutput += amounts.output;
+            current.todayCacheRead += amounts.cacheRead;
+            current.todayCacheWrite += amounts.cacheWrite;
+        }
         map.set(key, current);
     };
 
     for (const record of records) {
         const type = normalizeUsageType(record.type) || "";
-        const total = Number(record.totalTokens || 0);
+        const input = toUsageNumber(record.inputTokens);
+        const output = toUsageNumber(record.outputTokens);
+        const cacheRead = toUsageNumber(record.cacheReadTokens);
+        const cacheWrite = toUsageNumber(record.cacheWriteTokens);
+        const computedTotal = input + output + cacheRead + cacheWrite;
+        const rawTotal = Number(record.totalTokens ?? computedTotal);
+        const total = Number.isFinite(rawTotal)
+            ? Math.max(rawTotal, computedTotal)
+            : computedTotal;
         if (!Number.isFinite(total)) continue;
         if (record.profileKey) {
-            addTotals(byKey, `${type}||${record.profileKey}`, total, record.ts);
+            addTotals(
+                byKey,
+                `${type}||${record.profileKey}`,
+                { total, input, output, cacheRead, cacheWrite },
+                record.ts
+            );
         }
         if (record.profileName) {
-            addTotals(byName, `${type}||${record.profileName}`, total, record.ts);
+            addTotals(
+                byName,
+                `${type}||${record.profileName}`,
+                { total, input, output, cacheRead, cacheWrite },
+                record.ts
+            );
+        }
+    }
+
+    return { byKey, byName };
+}
+
+function buildUsageCostIndex(records: UsageRecord[], config: Config): UsageCostIndex {
+    const byKey = new Map<string, UsageCostTotals>();
+    const byName = new Map<string, UsageCostTotals>();
+    const { startMs, endMs } = getTodayWindow();
+
+    const addCost = (
+        map: Map<string, UsageCostTotals>,
+        key: string,
+        cost: number,
+        tokens: number,
+        ts: string
+    ) => {
+        if (!key) return;
+        const current = map.get(key) || createUsageCostTotals();
+        current.total += cost;
+        current.totalTokens += tokens;
+        if (isTimestampInWindow(ts, startMs, endMs)) {
+            current.today += cost;
+            current.todayTokens += tokens;
+        }
+        map.set(key, current);
+    };
+
+    for (const record of records) {
+        const model = normalizeModelValue(record.model);
+        if (!model) continue;
+        const type = normalizeUsageType(record.type) || "";
+        const profile =
+            record.profileKey && config.profiles ? config.profiles[record.profileKey] : null;
+        const pricing = resolvePricingForProfile(config, profile || null, model);
+        if (!pricing) continue;
+        const cost = calculateUsageCost(
+            {
+                totalTokens: record.totalTokens,
+                inputTokens: record.inputTokens,
+                outputTokens: record.outputTokens,
+                cacheReadTokens: record.cacheReadTokens,
+                cacheWriteTokens: record.cacheWriteTokens,
+            },
+            pricing
+        );
+        if (cost === null || !Number.isFinite(cost)) continue;
+        const billedTokens =
+            toUsageNumber(record.inputTokens) +
+            toUsageNumber(record.outputTokens) +
+            toUsageNumber(record.cacheReadTokens) +
+            toUsageNumber(record.cacheWriteTokens);
+        const billedTotal =
+            billedTokens > 0 ? billedTokens : toUsageNumber(record.totalTokens);
+        if (record.profileKey) {
+            addCost(byKey, `${type}||${record.profileKey}`, cost, billedTotal, record.ts);
+        }
+        if (record.profileName) {
+            addCost(byName, `${type}||${record.profileName}`, cost, billedTotal, record.ts);
         }
     }
 
@@ -186,6 +379,12 @@ function normalizeUsageType(type: string | null | undefined): string | null {
     const normalized = normalizeType(type);
     if (normalized) return normalized;
     const trimmed = String(type).trim();
+    return trimmed ? trimmed : null;
+}
+
+function normalizeModelValue(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
     return trimmed ? trimmed : null;
 }
 
@@ -226,6 +425,72 @@ export function readUsageTotalsIndex(
     return buildUsageTotals(records);
 }
 
+export function readUsageCostIndex(
+    config: Config,
+    configPath: string | null,
+    syncUsage: boolean
+): UsageCostIndex | null {
+    const usagePath = getUsagePath(config, configPath);
+    if (!usagePath) return null;
+    if (syncUsage) {
+        syncUsageFromSessions(config, configPath, usagePath);
+    }
+    const records = readUsageRecords(usagePath);
+    if (records.length === 0) return null;
+    const costs = buildUsageCostIndex(records, config);
+    if (costs.byKey.size === 0 && costs.byName.size === 0) return null;
+    return costs;
+}
+
+export function readUsageSessionCost(
+    config: Config,
+    configPath: string | null,
+    type: string | null,
+    sessionId: string | null,
+    syncUsage: boolean
+): number | null {
+    if (!sessionId) return null;
+    const usagePath = getUsagePath(config, configPath);
+    if (!usagePath) return null;
+    if (syncUsage) {
+        syncUsageFromSessions(config, configPath, usagePath);
+    }
+    const records = readUsageRecords(usagePath);
+    if (records.length === 0) return null;
+    const normalizedType = normalizeUsageType(type);
+    let total = 0;
+    let hasCost = false;
+    for (const record of records) {
+        if (!record.sessionId) continue;
+        if (record.sessionId !== sessionId) continue;
+        if (
+            normalizedType &&
+            normalizeUsageType(record.type) !== normalizedType
+        ) {
+            continue;
+        }
+        const model = normalizeModelValue(record.model);
+        if (!model) continue;
+        const profile = resolveProfileForRecord(config, normalizedType, record);
+        const pricing = resolvePricingForProfile(config, profile, model);
+        if (!pricing) continue;
+        const cost = calculateUsageCost(
+            {
+                totalTokens: record.totalTokens,
+                inputTokens: record.inputTokens,
+                outputTokens: record.outputTokens,
+                cacheReadTokens: record.cacheReadTokens,
+                cacheWriteTokens: record.cacheWriteTokens,
+            },
+            pricing
+        );
+        if (cost === null || !Number.isFinite(cost)) continue;
+        total += cost;
+        hasCost = true;
+    }
+    return hasCost ? total : null;
+}
+
 export function resolveUsageTotalsForProfile(
     totals: UsageTotalsIndex,
     type: string | null,
@@ -241,6 +506,21 @@ export function resolveUsageTotalsForProfile(
     );
 }
 
+export function resolveUsageCostForProfile(
+    costs: UsageCostIndex,
+    type: string | null,
+    profileKey: string | null,
+    profileName: string | null
+): UsageCostTotals | null {
+    const keyLookup = buildUsageLookupKey(type, profileKey);
+    const nameLookup = buildUsageLookupKey(type, profileName);
+    return (
+        (keyLookup && costs.byKey.get(keyLookup)) ||
+        (nameLookup && costs.byName.get(nameLookup)) ||
+        null
+    );
+}
+
 export function syncUsageFromStatuslineInput(
     config: Config,
     configPath: string | null,
@@ -249,19 +529,28 @@ export function syncUsageFromStatuslineInput(
     profileName: string | null,
     sessionId: string | null,
     totals: UsageTotalsInput | null,
-    cwd: string | null
+    cwd: string | null,
+    model: string | null
 ): void {
     if (!sessionId) return;
     if (!totals) return;
     if (!profileKey && !profileName) return;
+    const resolvedModel = normalizeModelValue(model);
+    if (!resolvedModel) return;
     const normalizedType = normalizeType(type || "");
     if (!normalizedType) return;
     const usagePath = getUsagePath(config, configPath);
     if (!usagePath) return;
     const inputTokens = toFiniteNumber(totals.inputTokens) ?? 0;
     const outputTokens = toFiniteNumber(totals.outputTokens) ?? 0;
+    const cacheReadTokens = toFiniteNumber(totals.cacheReadTokens) ?? 0;
+    const cacheWriteTokens = toFiniteNumber(totals.cacheWriteTokens) ?? 0;
     const totalTokens =
-        toFiniteNumber(totals.totalTokens) ?? inputTokens + outputTokens;
+        toFiniteNumber(totals.totalTokens) ??
+        inputTokens +
+            outputTokens +
+            cacheReadTokens +
+            cacheWriteTokens;
     if (!Number.isFinite(totalTokens)) return;
 
     const statePath = getUsageStatePath(usagePath, config);
@@ -273,16 +562,28 @@ export function syncUsageFromStatuslineInput(
         const sessions = state.sessions || {};
         const key = buildSessionKey(normalizedType, sessionId);
         const prev = sessions[key];
-        const prevInput = prev ? prev.inputTokens : 0;
-        const prevOutput = prev ? prev.outputTokens : 0;
-        const prevTotal = prev ? prev.totalTokens : 0;
+        const prevInput = prev ? toUsageNumber(prev.inputTokens) : 0;
+        const prevOutput = prev ? toUsageNumber(prev.outputTokens) : 0;
+        const prevCacheRead = prev ? toUsageNumber(prev.cacheReadTokens) : 0;
+        const prevCacheWrite = prev ? toUsageNumber(prev.cacheWriteTokens) : 0;
+        const prevTotal = prev ? toUsageNumber(prev.totalTokens) : 0;
 
         let deltaInput = inputTokens - prevInput;
         let deltaOutput = outputTokens - prevOutput;
+        let deltaCacheRead = cacheReadTokens - prevCacheRead;
+        let deltaCacheWrite = cacheWriteTokens - prevCacheWrite;
         let deltaTotal = totalTokens - prevTotal;
-        if (deltaTotal < 0 || deltaInput < 0 || deltaOutput < 0) {
+        if (
+            deltaTotal < 0 ||
+            deltaInput < 0 ||
+            deltaOutput < 0 ||
+            deltaCacheRead < 0 ||
+            deltaCacheWrite < 0
+        ) {
             deltaInput = inputTokens;
             deltaOutput = outputTokens;
+            deltaCacheRead = cacheReadTokens;
+            deltaCacheWrite = cacheWriteTokens;
             deltaTotal = totalTokens;
         }
 
@@ -292,8 +593,12 @@ export function syncUsageFromStatuslineInput(
                 type: normalizedType,
                 profileKey: profileKey || null,
                 profileName: profileName || null,
+                model: resolvedModel,
+                sessionId,
                 inputTokens: deltaInput,
                 outputTokens: deltaOutput,
+                cacheReadTokens: deltaCacheRead,
+                cacheWriteTokens: deltaCacheWrite,
                 totalTokens: deltaTotal,
             };
             appendUsageRecord(usagePath, record);
@@ -304,10 +609,13 @@ export function syncUsageFromStatuslineInput(
             type: normalizedType,
             inputTokens,
             outputTokens,
+            cacheReadTokens,
+            cacheWriteTokens,
             totalTokens,
             startTs: prev ? prev.startTs : now,
             endTs: now,
             cwd: cwd || (prev ? prev.cwd : null),
+            model: resolvedModel,
         };
         state.sessions = sessions;
         writeUsageState(statePath, state);
@@ -595,6 +903,66 @@ function updateMinMaxTs(
     }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function coerceModelFromValue(value: unknown): string | null {
+    if (typeof value === "string") return normalizeModelValue(value);
+    if (!isPlainObject(value)) return null;
+    return (
+        normalizeModelValue(value.displayName) ||
+        normalizeModelValue(value.display_name) ||
+        normalizeModelValue(value.name) ||
+        normalizeModelValue(value.id) ||
+        normalizeModelValue(value.model) ||
+        normalizeModelValue(value.model_name) ||
+        normalizeModelValue(value.model_id) ||
+        normalizeModelValue(value.modelId) ||
+        null
+    );
+}
+
+function pickModelFromObject(record: Record<string, unknown>): string | null {
+    return (
+        coerceModelFromValue(record.model) ||
+        normalizeModelValue(record.model_name) ||
+        normalizeModelValue(record.modelName) ||
+        normalizeModelValue(record.model_id) ||
+        normalizeModelValue(record.modelId) ||
+        normalizeModelValue(record.model_display_name) ||
+        normalizeModelValue(record.modelDisplayName) ||
+        null
+    );
+}
+
+function extractModelFromRecord(record: Record<string, unknown>): string | null {
+    const direct = pickModelFromObject(record);
+    if (direct) return direct;
+    const message = isPlainObject(record.message)
+        ? (record.message as Record<string, unknown>)
+        : null;
+    if (message) {
+        const fromMessage = pickModelFromObject(message);
+        if (fromMessage) return fromMessage;
+    }
+    const payload = isPlainObject(record.payload)
+        ? (record.payload as Record<string, unknown>)
+        : null;
+    if (payload) {
+        const fromPayload = pickModelFromObject(payload);
+        if (fromPayload) return fromPayload;
+        const info = isPlainObject(payload.info)
+            ? (payload.info as Record<string, unknown>)
+            : null;
+        if (info) {
+            const fromInfo = pickModelFromObject(info);
+            if (fromInfo) return fromInfo;
+        }
+    }
+    return null;
+}
+
 function parseCodexSessionFile(filePath: string): SessionStats {
     const raw = fs.readFileSync(filePath, "utf8");
     const lines = raw.split(/\r?\n/);
@@ -608,6 +976,7 @@ function parseCodexSessionFile(filePath: string): SessionStats {
     const tsRange = { start: null as string | null, end: null as string | null };
     let cwd: string | null = null;
     let sessionId: string | null = null;
+    let model: string | null = null;
 
     for (const line of lines) {
         const trimmed = line.trim();
@@ -615,6 +984,10 @@ function parseCodexSessionFile(filePath: string): SessionStats {
         try {
             const parsed = JSON.parse(trimmed);
             if (!parsed || typeof parsed !== "object") continue;
+            if (!model) {
+                const candidate = extractModelFromRecord(parsed as Record<string, unknown>);
+                if (candidate) model = candidate;
+            }
             if (parsed.timestamp) updateMinMaxTs(tsRange, String(parsed.timestamp));
             if (!cwd && parsed.type === "session_meta") {
                 const payload = parsed.payload || {};
@@ -667,11 +1040,14 @@ function parseCodexSessionFile(filePath: string): SessionStats {
     return {
         inputTokens: maxInput,
         outputTokens: maxOutput,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
         totalTokens: maxTotal,
         startTs: tsRange.start,
         endTs: tsRange.end,
         cwd,
         sessionId,
+        model,
     };
 }
 
@@ -681,9 +1057,12 @@ function parseClaudeSessionFile(filePath: string): SessionStats {
     let totalTokens = 0;
     let inputTokens = 0;
     let outputTokens = 0;
+    let cacheReadTokens = 0;
+    let cacheWriteTokens = 0;
     const tsRange = { start: null as string | null, end: null as string | null };
     let cwd: string | null = null;
     let sessionId: string | null = null;
+    let model: string | null = null;
 
     for (const line of lines) {
         const trimmed = line.trim();
@@ -691,6 +1070,10 @@ function parseClaudeSessionFile(filePath: string): SessionStats {
         try {
             const parsed = JSON.parse(trimmed);
             if (!parsed || typeof parsed !== "object") continue;
+            if (!model) {
+                const candidate = extractModelFromRecord(parsed as Record<string, unknown>);
+                if (candidate) model = candidate;
+            }
             if (parsed.timestamp) updateMinMaxTs(tsRange, String(parsed.timestamp));
             if (!cwd && parsed.cwd) cwd = String(parsed.cwd);
             if (!sessionId && parsed.sessionId) {
@@ -705,6 +1088,8 @@ function parseClaudeSessionFile(filePath: string): SessionStats {
             const cacheRead = Number(usage.cache_read_input_tokens ?? 0);
             if (Number.isFinite(input)) inputTokens += input;
             if (Number.isFinite(output)) outputTokens += output;
+            if (Number.isFinite(cacheCreate)) cacheWriteTokens += cacheCreate;
+            if (Number.isFinite(cacheRead)) cacheReadTokens += cacheRead;
             totalTokens +=
                 (Number.isFinite(input) ? input : 0) +
                 (Number.isFinite(output) ? output : 0) +
@@ -718,11 +1103,14 @@ function parseClaudeSessionFile(filePath: string): SessionStats {
     return {
         inputTokens,
         outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
         totalTokens,
         startTs: tsRange.start,
         endTs: tsRange.end,
         cwd,
         sessionId,
+        model,
     };
 }
 
@@ -827,16 +1215,56 @@ export function readUsageRecords(usagePath: string): UsageRecord[] {
             if (!parsed || typeof parsed !== "object") continue;
             const input = Number(parsed.inputTokens ?? 0);
             const output = Number(parsed.outputTokens ?? 0);
-            const total = Number(parsed.totalTokens ?? input + output);
+            const cacheRead = Number(
+                parsed.cacheReadTokens ??
+                    parsed.cache_read_input_tokens ??
+                    parsed.cacheReadInputTokens ??
+                    0
+            );
+            const cacheWrite = Number(
+                parsed.cacheWriteTokens ??
+                    parsed.cache_creation_input_tokens ??
+                    parsed.cache_write_input_tokens ??
+                    parsed.cacheWriteInputTokens ??
+                    0
+            );
+            const computedTotal =
+                (Number.isFinite(input) ? input : 0) +
+                (Number.isFinite(output) ? output : 0) +
+                (Number.isFinite(cacheRead) ? cacheRead : 0) +
+                (Number.isFinite(cacheWrite) ? cacheWrite : 0);
+            const total = Number(
+                parsed.totalTokens ?? computedTotal
+            );
+            const finalTotal = Number.isFinite(total)
+                ? Math.max(total, computedTotal)
+                : computedTotal;
             const type = normalizeType(parsed.type) || String(parsed.type ?? "unknown");
+            const model =
+                normalizeModelValue(parsed.model) ||
+                normalizeModelValue(parsed.model_name) ||
+                normalizeModelValue(parsed.modelName) ||
+                normalizeModelValue(parsed.model_id) ||
+                normalizeModelValue(parsed.modelId) ||
+                null;
+            const sessionId =
+                parsed.sessionId ||
+                parsed.session_id ||
+                parsed.sessionID ||
+                parsed.session ||
+                null;
             records.push({
                 ts: String(parsed.ts ?? ""),
                 type,
                 profileKey: parsed.profileKey ? String(parsed.profileKey) : null,
                 profileName: parsed.profileName ? String(parsed.profileName) : null,
+                model,
+                sessionId: sessionId ? String(sessionId) : null,
                 inputTokens: Number.isFinite(input) ? input : 0,
                 outputTokens: Number.isFinite(output) ? output : 0,
-                totalTokens: Number.isFinite(total) ? total : 0,
+                cacheReadTokens: Number.isFinite(cacheRead) ? cacheRead : 0,
+                cacheWriteTokens: Number.isFinite(cacheWrite) ? cacheWrite : 0,
+                totalTokens: Number.isFinite(finalTotal) ? finalTotal : 0,
             });
         } catch {
             // ignore invalid lines
@@ -896,29 +1324,54 @@ export function syncUsageFromSessions(
             const sessionKey =
                 stats.sessionId ? buildSessionKey(type, stats.sessionId) : null;
             const sessionPrev = sessionKey ? sessions[sessionKey] : null;
-            const prevInput = prev ? prev.inputTokens : 0;
-            const prevOutput = prev ? prev.outputTokens : 0;
-            const prevTotal = prev ? prev.totalTokens : 0;
+            const resolvedModel =
+                (sessionPrev && sessionPrev.model) ||
+                stats.model ||
+                (prev && prev.model) ||
+                null;
+            const prevInput = prev ? toUsageNumber(prev.inputTokens) : 0;
+            const prevOutput = prev ? toUsageNumber(prev.outputTokens) : 0;
+            const prevCacheRead = prev ? toUsageNumber(prev.cacheReadTokens) : 0;
+            const prevCacheWrite = prev ? toUsageNumber(prev.cacheWriteTokens) : 0;
+            const prevTotal = prev ? toUsageNumber(prev.totalTokens) : 0;
             const prevInputMax = sessionPrev
-                ? Math.max(prevInput, sessionPrev.inputTokens)
+                ? Math.max(prevInput, toUsageNumber(sessionPrev.inputTokens))
                 : prevInput;
             const prevOutputMax = sessionPrev
-                ? Math.max(prevOutput, sessionPrev.outputTokens)
+                ? Math.max(prevOutput, toUsageNumber(sessionPrev.outputTokens))
                 : prevOutput;
+            const prevCacheReadMax = sessionPrev
+                ? Math.max(prevCacheRead, toUsageNumber(sessionPrev.cacheReadTokens))
+                : prevCacheRead;
+            const prevCacheWriteMax = sessionPrev
+                ? Math.max(prevCacheWrite, toUsageNumber(sessionPrev.cacheWriteTokens))
+                : prevCacheWrite;
             const prevTotalMax = sessionPrev
-                ? Math.max(prevTotal, sessionPrev.totalTokens)
+                ? Math.max(prevTotal, toUsageNumber(sessionPrev.totalTokens))
                 : prevTotal;
             let deltaInput = stats.inputTokens - prevInputMax;
             let deltaOutput = stats.outputTokens - prevOutputMax;
+            let deltaCacheRead = stats.cacheReadTokens - prevCacheReadMax;
+            let deltaCacheWrite = stats.cacheWriteTokens - prevCacheWriteMax;
             let deltaTotal = stats.totalTokens - prevTotalMax;
-            if (deltaTotal < 0 || deltaInput < 0 || deltaOutput < 0) {
+            if (
+                deltaTotal < 0 ||
+                deltaInput < 0 ||
+                deltaOutput < 0 ||
+                deltaCacheRead < 0 ||
+                deltaCacheWrite < 0
+            ) {
                 if (sessionPrev) {
                     deltaInput = 0;
                     deltaOutput = 0;
+                    deltaCacheRead = 0;
+                    deltaCacheWrite = 0;
                     deltaTotal = 0;
                 } else {
                     deltaInput = stats.inputTokens;
                     deltaOutput = stats.outputTokens;
+                    deltaCacheRead = stats.cacheReadTokens;
+                    deltaCacheWrite = stats.cacheWriteTokens;
                     deltaTotal = stats.totalTokens;
                 }
             }
@@ -928,30 +1381,58 @@ export function syncUsageFromSessions(
                     type,
                     profileKey: resolved.match.profileKey,
                     profileName: resolved.match.profileName,
+                    model: resolvedModel,
+                    sessionId: stats.sessionId,
                     inputTokens: deltaInput,
                     outputTokens: deltaOutput,
+                    cacheReadTokens: deltaCacheRead,
+                    cacheWriteTokens: deltaCacheWrite,
                     totalTokens: deltaTotal,
                 };
                 appendUsageRecord(usagePath, record);
             }
             if (sessionKey) {
                 const nextInput = sessionPrev
-                    ? Math.max(sessionPrev.inputTokens, stats.inputTokens)
+                    ? Math.max(
+                          toUsageNumber(sessionPrev.inputTokens),
+                          stats.inputTokens
+                      )
                     : stats.inputTokens;
                 const nextOutput = sessionPrev
-                    ? Math.max(sessionPrev.outputTokens, stats.outputTokens)
+                    ? Math.max(
+                          toUsageNumber(sessionPrev.outputTokens),
+                          stats.outputTokens
+                      )
                     : stats.outputTokens;
+                const nextCacheRead = sessionPrev
+                    ? Math.max(
+                          toUsageNumber(sessionPrev.cacheReadTokens),
+                          stats.cacheReadTokens
+                      )
+                    : stats.cacheReadTokens;
+                const nextCacheWrite = sessionPrev
+                    ? Math.max(
+                          toUsageNumber(sessionPrev.cacheWriteTokens),
+                          stats.cacheWriteTokens
+                      )
+                    : stats.cacheWriteTokens;
                 const nextTotal = sessionPrev
-                    ? Math.max(sessionPrev.totalTokens, stats.totalTokens)
+                    ? Math.max(
+                          toUsageNumber(sessionPrev.totalTokens),
+                          stats.totalTokens
+                      )
                     : stats.totalTokens;
                 sessions[sessionKey] = {
                     type,
                     inputTokens: nextInput,
                     outputTokens: nextOutput,
+                    cacheReadTokens: nextCacheRead,
+                    cacheWriteTokens: nextCacheWrite,
                     totalTokens: nextTotal,
                     startTs: sessionPrev ? sessionPrev.startTs : stats.startTs,
                     endTs: stats.endTs || (sessionPrev ? sessionPrev.endTs : null),
                     cwd: stats.cwd || (sessionPrev ? sessionPrev.cwd : null),
+                    model: resolvedModel,
                 };
             }
             files[filePath] = {
@@ -960,10 +1441,13 @@ export function syncUsageFromSessions(
                 type,
                 inputTokens: stats.inputTokens,
                 outputTokens: stats.outputTokens,
+                cacheReadTokens: stats.cacheReadTokens,
+                cacheWriteTokens: stats.cacheWriteTokens,
                 totalTokens: stats.totalTokens,
                 startTs: stats.startTs,
                 endTs: stats.endTs,
                 cwd: stats.cwd,
+                model: resolvedModel,
             };
         };
 

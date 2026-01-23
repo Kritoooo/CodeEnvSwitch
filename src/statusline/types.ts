@@ -9,6 +9,8 @@ export interface StatuslineInputUsage {
     totalTokens?: number;
     inputTokens?: number;
     outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
 }
 
 export interface StatuslineInputContextWindowUsage {
@@ -72,11 +74,15 @@ export interface StatuslineUsage {
     totalTokens: number | null;
     inputTokens: number | null;
     outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
 }
 
 export interface StatuslineUsageTotals {
     inputTokens: number | null;
     outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheWriteTokens: number | null;
     totalTokens: number | null;
 }
 

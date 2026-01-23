@@ -15,6 +15,7 @@ export interface Profile {
     env?: Record<string, EnvValue>;
     removeFiles?: string[];
     commands?: string[];
+    pricing?: ProfilePricing;
 }
 
 export interface CodexStatuslineConfig {
@@ -43,6 +44,24 @@ export interface Config {
     claudeSessionsPath?: string;
     codexStatusline?: CodexStatuslineConfig;
     claudeStatusline?: ClaudeStatuslineConfig;
+    pricing?: PricingConfig;
+}
+
+export interface TokenPricing {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    description?: string;
+}
+
+export interface PricingConfig {
+    models?: Record<string, TokenPricing>;
+}
+
+export interface ProfilePricing extends TokenPricing {
+    model?: string;
+    multiplier?: number;
 }
 
 export interface ListRow {
@@ -54,6 +73,10 @@ export interface ListRow {
     usageType?: ProfileType | null;
     todayTokens?: number;
     totalTokens?: number;
+    todayCost?: number;
+    totalCost?: number;
+    todayBilledTokens?: number;
+    totalBilledTokens?: number;
 }
 
 export interface ParsedArgs {

@@ -217,6 +217,17 @@ If nothing is found, `codenv add` writes to `~/.config/code-env/config.json`.
     "type": "command",
     "padding": 0
   },
+  "pricing": {
+    "models": {
+      "Claude Sonnet 4.5": {
+        "input": 3.0,
+        "output": 15.0,
+        "cacheWrite": 3.75,
+        "cacheRead": 0.3,
+        "description": "Balanced performance and speed for daily use."
+      }
+    }
+  },
   "profiles": {
     "p_a1b2c3": {
       "name": "primary",
@@ -247,10 +258,16 @@ Notes:
   - `type`: string; statusLine type (default: `command`).
   - `padding`: number; statusLine padding (default: 0).
   - `settingsPath`: optional; override `~/.claude/settings.json` (also supports `CODE_ENV_CLAUDE_SETTINGS_PATH`).
+- `pricing`: optional; model pricing (USD per 1M tokens) used to convert token usage to dollar amounts in the status line.
+  - `models`: map of model name to pricing. Keys are matched case/format-insensitively.
+  - `input`/`output`/`cacheRead`/`cacheWrite`: token rates.
+  - Cost display uses the profile pricing model if set; otherwise the status line model label. No breakdown => no cost.
 - `name`: human-facing profile name shown in `codenv list` and used by `codenv use <name>`.
 - `type`: optional; `codex` or `claude` (alias `cc`) for `codenv use <type> <name>` matching.
 - `note`: shown in `codenv list`.
 - `removeFiles`: optional; `codenv use` emits `rm -f` for each path. Codex profiles also remove `~/.codex/auth.json`.
+- `pricing` (profile): optional; per-profile pricing override. Supports `model` plus `input`/`output`/`cacheRead`/`cacheWrite`.
+  - `multiplier`: optional; scale pricing (number).
 - `ANTHROPIC_AUTH_TOKEN`: when `ANTHROPIC_API_KEY` is set, `codenv use` also exports `ANTHROPIC_AUTH_TOKEN` with the same value.
 - `commands`: optional; emitted as-is in the switch script.
 

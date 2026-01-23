@@ -6,9 +6,12 @@ import { buildListRows } from "../profile/display";
 import { getResolvedDefaultProfileKeys } from "../config/defaults";
 import {
     formatTokenCount,
+    readUsageCostIndex,
     readUsageTotalsIndex,
+    resolveUsageCostForProfile,
     resolveUsageTotalsForProfile,
 } from "../usage";
+import { formatUsdAmount } from "../usage/pricing";
 
 export function printList(config: Config, configPath: string | null): void {
     const rows = buildListRows(config, getResolvedDefaultProfileKeys);
@@ -18,6 +21,7 @@ export function printList(config: Config, configPath: string | null): void {
     }
     try {
         const usageTotals = readUsageTotalsIndex(config, configPath, true);
+        const usageCosts = readUsageCostIndex(config, configPath, false);
         if (usageTotals) {
             for (const row of rows) {
                 if (!row.usageType) continue;
@@ -32,6 +36,22 @@ export function printList(config: Config, configPath: string | null): void {
                 row.totalTokens = usage.total;
             }
         }
+        if (usageCosts) {
+            for (const row of rows) {
+                if (!row.usageType) continue;
+                const cost = resolveUsageCostForProfile(
+                    usageCosts,
+                    row.usageType,
+                    row.key,
+                    row.name
+                );
+                if (!cost) continue;
+                row.todayCost = cost.today;
+                row.totalCost = cost.total;
+                row.todayBilledTokens = cost.todayTokens;
+                row.totalBilledTokens = cost.totalTokens;
+            }
+        }
     } catch {
         // ignore usage sync errors
     }
@@ -40,8 +60,20 @@ export function printList(config: Config, configPath: string | null): void {
     const headerToday = "TODAY";
     const headerTotal = "TOTAL";
     const headerNote = "NOTE";
-    const todayTexts = rows.map((row) => formatTokenCount(row.todayTokens));
-    const totalTexts = rows.map((row) => formatTokenCount(row.totalTokens));
+    const todayTexts = rows.map((row) =>
+        formatUsageWithCost(
+            row.todayTokens,
+            row.todayBilledTokens ?? null,
+            row.todayCost ?? null
+        )
+    );
+    const totalTexts = rows.map((row) =>
+        formatUsageWithCost(
+            row.totalTokens,
+            row.totalBilledTokens ?? null,
+            row.totalCost ?? null
+        )
+    );
     const nameWidth = Math.max(
         headerName.length,
         ...rows.map((row) => row.name.length)
@@ -67,7 +99,15 @@ export function printList(config: Config, configPath: string | null): void {
             todayWidth
         )}  ${total.padStart(totalWidth)}  ${note.padEnd(noteWidth)}`;
 
-    console.log(formatRow(headerName, headerType, headerToday, headerTotal, headerNote));
+    console.log(
+        formatRow(
+            headerName,
+            headerType,
+            headerToday,
+            headerTotal,
+            headerNote
+        )
+    );
     console.log(
         formatRow(
             "-".repeat(nameWidth),
@@ -81,11 +121,41 @@ export function printList(config: Config, configPath: string | null): void {
         const row = rows[i];
         const todayText = todayTexts[i] || "-";
         const totalText = totalTexts[i] || "-";
-        const line = formatRow(row.name, row.type, todayText, totalText, row.note);
+        const line = formatRow(
+            row.name,
+            row.type,
+            todayText,
+            totalText,
+            row.note
+        );
         if (row.active) {
             console.log(`\x1b[32m${line}\x1b[0m`);
         } else {
             console.log(line);
         }
     }
+}
+
+function formatUsageWithCost(
+    tokens: number | null | undefined,
+    billedTokens: number | null,
+    cost: number | null
+): string {
+    const tokenText = formatTokenCount(tokens ?? null);
+    if (tokenText === "-") return tokenText;
+    if (cost === null || !Number.isFinite(cost)) return tokenText;
+    if (tokens === null || tokens === undefined || !Number.isFinite(tokens)) {
+        return tokenText;
+    }
+    if (billedTokens === null || !Number.isFinite(billedTokens)) {
+        return `${tokenText} (${formatUsdAmount(cost)})`;
+    }
+    if (billedTokens >= tokens) {
+        return `${tokenText} (${formatUsdAmount(cost)})`;
+    }
+    const billedText = formatTokenCount(billedTokens);
+    if (billedText === "-") {
+        return `${tokenText} (${formatUsdAmount(cost)})`;
+    }
+    return `${tokenText} (billed ${billedText}, ${formatUsdAmount(cost)})`;
 }

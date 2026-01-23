@@ -1,4 +1,5 @@
 import { formatTokenCount } from "../usage";
+import { formatUsdAmount } from "../usage/pricing";
 import {
     ICON_CONTEXT,
     ICON_CWD,
@@ -9,7 +10,6 @@ import {
     colorize,
     dim,
 } from "./style";
-import type { StatuslineUsage } from "./types";
 import * as path from "path";
 
 export function getCwdSegment(cwd: string): string | null {
@@ -19,15 +19,14 @@ export function getCwdSegment(cwd: string): string | null {
     return dim(segment);
 }
 
-export function formatUsageSegment(usage: StatuslineUsage | null): string | null {
-    if (!usage) return null;
-    const today =
-        usage.todayTokens ??
-        (usage.inputTokens !== null || usage.outputTokens !== null
-            ? (usage.inputTokens || 0) + (usage.outputTokens || 0)
-            : usage.totalTokens);
-    if (today === null) return null;
-    const text = `Today ${formatTokenCount(today)}`;
+export function formatUsageSegment(
+    todayCost: number | null,
+    sessionCost: number | null
+): string | null {
+    if (todayCost === null && sessionCost === null) return null;
+    const todayText = `T ${formatUsdAmount(todayCost)}`;
+    const sessionText = `S ${formatUsdAmount(sessionCost)}`;
+    const text = `${todayText} / ${sessionText}`;
     return colorize(`${ICON_USAGE} ${text}`, "33");
 }
 

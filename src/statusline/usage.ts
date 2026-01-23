@@ -2,127 +2,26 @@ import type { Config } from "../types";
 import { normalizeType } from "../profile/type";
 import { readUsageTotalsIndex, resolveUsageTotalsForProfile } from "../usage";
 import type { StatuslineInput, StatuslineInputUsage, StatuslineUsage, StatuslineUsageTotals } from "./types";
-import { coerceNumber, firstNumber, isRecord } from "./utils";
-
-export function parseUsageTotalsRecord(
-    record: Record<string, unknown>
-): StatuslineUsageTotals | null {
-    const inputTokens =
-        firstNumber(
-            record.inputTokens,
-            record.input,
-            record.input_tokens
-        ) ?? null;
-    const outputTokens =
-        firstNumber(
-            record.outputTokens,
-            record.output,
-            record.output_tokens
-        ) ?? null;
-    const totalTokens =
-        firstNumber(
-            record.totalTokens,
-            record.total,
-            record.total_tokens
-        ) ?? null;
-    const cacheRead =
-        firstNumber(
-            record.cache_read_input_tokens,
-            record.cacheReadInputTokens,
-            record.cache_read,
-            record.cacheRead
-        ) ?? null;
-    const cacheWrite =
-        firstNumber(
-            record.cache_creation_input_tokens,
-            record.cacheCreationInputTokens,
-            record.cache_write_input_tokens,
-            record.cacheWriteInputTokens,
-            record.cache_write,
-            record.cacheWrite
-        ) ?? null;
-    let computedTotal: number | null = null;
-    if (
-        inputTokens !== null ||
-        outputTokens !== null ||
-        cacheRead !== null ||
-        cacheWrite !== null
-    ) {
-        computedTotal =
-            (inputTokens || 0) +
-            (outputTokens || 0) +
-            (cacheRead || 0) +
-            (cacheWrite || 0);
-    }
-    const resolvedTotal = totalTokens ?? computedTotal;
-    if (
-        inputTokens === null &&
-        outputTokens === null &&
-        resolvedTotal === null
-    ) {
-        return null;
-    }
-    return {
-        inputTokens,
-        outputTokens,
-        totalTokens: resolvedTotal,
-    };
-}
+import { coerceNumber } from "./utils";
+import { getClaudeUsageTotalsFromInput } from "./usage/claude";
+import { getCodexUsageTotalsFromInput } from "./usage/codex";
 
 export function getUsageTotalsFromInput(
-    input: StatuslineInput | null
+    input: StatuslineInput | null,
+    type: string | null
 ): StatuslineUsageTotals | null {
     if (!input) return null;
-    const contextWindow = isRecord(input.context_window)
-        ? (input.context_window as Record<string, unknown>)
-        : isRecord(input.contextWindow)
-        ? (input.contextWindow as Record<string, unknown>)
-        : null;
-    if (contextWindow) {
-        const totalInputTokens =
-            firstNumber(
-                contextWindow.total_input_tokens,
-                contextWindow.totalInputTokens
-            ) ?? null;
-        const totalOutputTokens =
-            firstNumber(
-                contextWindow.total_output_tokens,
-                contextWindow.totalOutputTokens
-            ) ?? null;
-        if (totalInputTokens !== null || totalOutputTokens !== null) {
-            return {
-                inputTokens: totalInputTokens,
-                outputTokens: totalOutputTokens,
-                totalTokens: (totalInputTokens || 0) + (totalOutputTokens || 0),
-            };
-        }
+    const normalized = normalizeType(type || "");
+    if (normalized === "codex") {
+        return getCodexUsageTotalsFromInput(input);
     }
-    if (typeof input.token_usage === "number") {
-        return {
-            inputTokens: null,
-            outputTokens: null,
-            totalTokens: coerceNumber(input.token_usage),
-        };
+    if (normalized === "claude") {
+        return getClaudeUsageTotalsFromInput(input);
     }
-    if (isRecord(input.token_usage)) {
-        const tokenUsage = input.token_usage as Record<string, unknown>;
-        const totalUsage =
-            (isRecord(tokenUsage.total_token_usage)
-                ? (tokenUsage.total_token_usage as Record<string, unknown>)
-                : null) ||
-            (isRecord(tokenUsage.totalTokenUsage)
-                ? (tokenUsage.totalTokenUsage as Record<string, unknown>)
-                : null);
-        if (totalUsage) {
-            const parsed = parseUsageTotalsRecord(totalUsage);
-            if (parsed) return parsed;
-        }
-        return parseUsageTotalsRecord(tokenUsage);
-    }
-    if (isRecord(input.usage)) {
-        return parseUsageTotalsRecord(input.usage as Record<string, unknown>);
-    }
-    return null;
+    return (
+        getCodexUsageTotalsFromInput(input) ||
+        getClaudeUsageTotalsFromInput(input)
+    );
 }
 
 export function normalizeInputUsage(
@@ -131,15 +30,19 @@ export function normalizeInputUsage(
     if (!inputUsage) return null;
     const usage: StatuslineUsage = {
         todayTokens: coerceNumber(inputUsage.todayTokens),
-        totalTokens: coerceNumber(inputUsage.totalTokens),
+        totalTokens: coerceNumber(inputUsage.totalTokens),  
         inputTokens: coerceNumber(inputUsage.inputTokens),
         outputTokens: coerceNumber(inputUsage.outputTokens),
+        cacheReadTokens: coerceNumber(inputUsage.cacheReadTokens),
+        cacheWriteTokens: coerceNumber(inputUsage.cacheWriteTokens),
     };
     const hasUsage =
         usage.todayTokens !== null ||
         usage.totalTokens !== null ||
         usage.inputTokens !== null ||
-        usage.outputTokens !== null;
+        usage.outputTokens !== null ||
+        usage.cacheReadTokens !== null ||
+        usage.cacheWriteTokens !== null;
     return hasUsage ? usage : null;
 }
 
@@ -166,8 +69,10 @@ export function resolveUsageFromRecords(
         return {
             todayTokens: usage.today,
             totalTokens: usage.total,
-            inputTokens: null,
-            outputTokens: null,
+            inputTokens: usage.todayInput ?? null,
+            outputTokens: usage.todayOutput ?? null,
+            cacheReadTokens: usage.todayCacheRead ?? null,
+            cacheWriteTokens: usage.todayCacheWrite ?? null,
         };
     } catch {
         return null;

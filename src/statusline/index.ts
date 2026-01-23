@@ -3,7 +3,13 @@
  */
 import type { Config, StatuslineArgs } from "../types";
 import { normalizeType, inferProfileType, getProfileDisplayName } from "../profile/type";
-import { syncUsageFromStatuslineInput } from "../usage";
+import {
+    readUsageCostIndex,
+    readUsageSessionCost,
+    resolveUsageCostForProfile,
+    syncUsageFromStatuslineInput,
+} from "../usage";
+import { calculateUsageCost, resolvePricingForProfile } from "../usage/pricing";
 import { appendStatuslineDebug } from "./debug";
 import {
     formatContextSegment,
@@ -91,8 +97,17 @@ export function buildStatuslineResult(
     )!;
 
     const sessionId = getSessionId(stdinInput);
-    const stdinUsageTotals = getUsageTotalsFromInput(stdinInput);
     const usageType = normalizeType(type || "");
+    const stdinUsageTotals = getUsageTotalsFromInput(stdinInput, usageType);
+    const model = firstNonEmpty(
+        args.model,
+        process.env.CODE_ENV_MODEL,
+        getModelFromInput(stdinInput)
+    );
+    const modelProvider = firstNonEmpty(
+        process.env.CODE_ENV_MODEL_PROVIDER,
+        getModelProviderFromInput(stdinInput)
+    );
     appendStatuslineDebug(configPath, {
         timestamp: new Date().toISOString(),
         typeCandidate,
@@ -130,19 +145,10 @@ export function buildStatuslineResult(
             profileName,
             sessionId,
             stdinUsageTotals,
-            cwd
+            cwd,
+            model
         );
     }
-
-    const model = firstNonEmpty(
-        args.model,
-        process.env.CODE_ENV_MODEL,
-        getModelFromInput(stdinInput)
-    );
-    const modelProvider = firstNonEmpty(
-        process.env.CODE_ENV_MODEL_PROVIDER,
-        getModelProviderFromInput(stdinInput)
-    );
 
     const usage: StatuslineUsage = {
         todayTokens: firstNumber(
@@ -161,6 +167,8 @@ export function buildStatuslineResult(
             args.usageOutput,
             process.env.CODE_ENV_USAGE_OUTPUT
         ),
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
     };
 
     const hasExplicitUsage =
@@ -169,21 +177,25 @@ export function buildStatuslineResult(
         usage.inputTokens !== null ||
         usage.outputTokens !== null;
 
-    const stdinUsage = normalizeInputUsage(getInputUsage(stdinInput));
+    const stdinUsage = normalizeInputUsage(getInputUsage(stdinInput, usageType));
+    const recordsUsage = resolveUsageFromRecords(
+        config,
+        configPath,
+        type,
+        profileKey,
+        profileName,
+        args.syncUsage
+    );
 
     let finalUsage: StatuslineUsage | null = hasExplicitUsage ? usage : null;
+    if (!finalUsage && args.syncUsage && recordsUsage) {
+        finalUsage = recordsUsage;
+    }
     if (!finalUsage) {
         finalUsage = stdinUsage;
     }
-    if (!finalUsage) {
-        finalUsage = resolveUsageFromRecords(
-            config,
-            configPath,
-            type,
-            profileKey,
-            profileName,
-            args.syncUsage
-        );
+    if (!finalUsage && recordsUsage) {
+        finalUsage = recordsUsage;
     }
 
     let gitStatus = getGitStatus(cwd);
@@ -198,7 +210,45 @@ export function buildStatuslineResult(
     const gitSegment = formatGitSegment(gitStatus);
     const profileSegment = formatProfileSegment(type, profileKey, profileName);
     const modelSegment = formatModelSegment(model, modelProvider);
-    const usageSegment = formatUsageSegment(finalUsage);
+    let profile = profileKey && config.profiles ? config.profiles[profileKey] : null;
+    if (!profile && profileName && config.profiles) {
+        const matches = Object.entries(config.profiles).find(([key, entry]) => {
+            const displayName = getProfileDisplayName(key, entry);
+            return (
+                displayName === profileName ||
+                entry.name === profileName ||
+                key === profileName
+            );
+        });
+        if (matches) profile = matches[1];
+    }
+    const sessionUsage = hasExplicitUsage ? usage : stdinUsage;
+    const pricing = resolvePricingForProfile(config, profile || null, model);
+    let sessionCost: number | null = null;
+    if (hasExplicitUsage) {
+        sessionCost = sessionUsage
+            ? calculateUsageCost(sessionUsage, pricing)
+            : null;
+    } else {
+        const sessionCostFromRecords = sessionId
+            ? readUsageSessionCost(
+                  config,
+                  configPath,
+                  type,
+                  sessionId,
+                  args.syncUsage
+              )
+            : null;
+        sessionCost =
+            sessionCostFromRecords ??
+            (sessionUsage ? calculateUsageCost(sessionUsage, pricing) : null);
+    }
+    const costIndex = readUsageCostIndex(config, configPath, args.syncUsage);
+    const costTotals = costIndex
+        ? resolveUsageCostForProfile(costIndex, type, profileKey, profileName)
+        : null;
+    const todayCost = costTotals ? costTotals.today : null;
+    const usageSegment = formatUsageSegment(todayCost, sessionCost);
     const contextLeft = getContextLeftPercent(stdinInput, type);
     const contextSegment = formatContextSegment(contextLeft);
     const contextUsedTokens = getContextUsedTokens(stdinInput);

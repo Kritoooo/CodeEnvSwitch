@@ -216,6 +216,17 @@ codenv use codex primary | source
     "type": "command",
     "padding": 0
   },
+  "pricing": {
+    "models": {
+      "Claude Sonnet 4.5": {
+        "input": 3.0,
+        "output": 15.0,
+        "cacheWrite": 3.75,
+        "cacheRead": 0.3,
+        "description": "平衡性能与速度，适合日常使用"
+      }
+    }
+  },
   "profiles": {
     "p_a1b2c3": {
       "name": "primary",
@@ -246,10 +257,16 @@ codenv use codex primary | source
   - `type`：字符串；statusLine 类型（默认 `command`）。
   - `padding`：数字；statusLine padding（默认 0）。
   - `settingsPath`：可选；覆盖 `~/.claude/settings.json`（也可用 `CODE_ENV_CLAUDE_SETTINGS_PATH`）。
+- `pricing`：可选；模型价格（美元 / 1M tokens），用于在状态栏将 token 用量换算为美元额度。
+  - `models`：模型名称到价格的映射（匹配时忽略大小写与格式差异）。
+  - `input`/`output`/`cacheRead`/`cacheWrite`：输入/输出/缓存价格。
+  - 优先使用 profile 中指定的 `model`，否则使用状态栏输入的模型名称；无拆分则不显示金额。
 - `name`：用于展示的 profile 名称，`codenv list` 与 `codenv use <name>` 会使用它。
 - `type`：可选，`codex` 或 `claude`（别名 `cc`），便于用 `codenv use <type> <name>` 匹配。
 - `note`：显示在 `codenv list` 输出中。
 - `removeFiles`：可选；`codenv use` 会输出对应 `rm -f`。Codex profile 还会删除 `~/.codex/auth.json`。
+- `pricing`（profile 内）：可选；为单个 profile 覆盖价格。支持 `model` 以及 `input`/`output`/`cacheRead`/`cacheWrite`。
+  - `multiplier`：可选；倍率（数字）。
 - `ANTHROPIC_AUTH_TOKEN`：当设置了 `ANTHROPIC_API_KEY` 时，`codenv use` 会自动以同样的值导出 `ANTHROPIC_AUTH_TOKEN`。
 - `commands`：可选；原样输出到切换脚本中。
 
