@@ -80,6 +80,46 @@ codenv remove codex primary
 `codenv list` (or `codenv ls`) prints a table with `PROFILE`, `TYPE`, and `NOTE`. Default profiles are labeled in the `NOTE` column, and the active profile is shown in green.
 If `profile.name` is set, it is shown in `PROFILE`. Otherwise the profile key is shown (with legacy `type-` prefixes stripped when possible).
 
+### Reset usage history
+
+```bash
+codenv usage-reset
+# skip confirmation
+codenv usage-reset --yes
+```
+
+This deletes usage history files (`usage.jsonl`, usage state, `profile-log.jsonl`, `statusline-debug.jsonl`) plus any backup variants in the config directory.
+
+### Usage tracking
+
+Usage stats are derived from two sources (statusline input + session logs) and appended to `usage.jsonl`.
+
+- Files and paths
+  - `usage.jsonl`: JSONL records with `ts`, `type`, `profileKey`/`profileName`, `model`, `sessionId`, and token breakdowns.
+  - `usage.jsonl.state.json`: per-session totals + per-session-file metadata (mtime/size) used to compute deltas and avoid double counting.
+  - `profile-log.jsonl`: profile usage + session binding log (`use` and `session` events).
+  - `statusline-debug.jsonl`: optional debug capture when `CODE_ENV_STATUSLINE_DEBUG` is enabled.
+  - Paths can be overridden via `usagePath`, `usageStatePath`, `profileLogPath`, `codexSessionsPath`, `claudeSessionsPath`.
+- Session binding (profile -> session)
+  - `codenv init` installs a shell wrapper so `codex`/`claude` run via `codenv launch`.
+  - `codenv launch` logs profile usage and then finds the latest unbound session file (prefers matching `cwd`, within a small grace window) and records the binding in `profile-log.jsonl`.
+  - Sync uses these bindings to attribute session usage to a profile.
+- Statusline sync (`codenv statusline --sync-usage`)
+  - Requires `sessionId`, model, and a profile (`profileKey` or `profileName`) to write usage.
+  - Reads stdin JSON for totals and computes a delta against the last stored totals in the state file.
+  - If totals decrease (session reset), the current totals are treated as fresh usage; otherwise negative sub-deltas are clamped to zero.
+  - If the token breakdown exceeds the reported total, the breakdown sum wins.
+  - Appends a delta record to `usage.jsonl` and updates the per-session totals in the state file.
+- Session log sync (`--sync-usage` and `codenv list`)
+  - Scans Codex sessions under `CODEX_HOME/sessions` (or `~/.codex/sessions`) and Claude sessions under `CLAUDE_HOME/projects` (or `~/.claude/projects`).
+  - Codex: parses `event_msg` token_count records and uses max totals; cached input is recorded as cache read and subtracted from input when possible.
+  - Claude: sums `message.usage` input/output/cache tokens across the file.
+  - Deltas are computed against prior file metadata and per-session maxima in the state file; files without a resolved binding are skipped.
+- Daily totals
+  - "Today" is computed in local time between 00:00 and the next 00:00.
+- Cost calculation
+  - Uses pricing from the profile (or `pricing.models`, plus defaults) and requires token splits; if splits are missing, cost is omitted.
+
 ### Add / update a profile
 
 ```bash

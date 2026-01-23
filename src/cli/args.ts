@@ -5,6 +5,7 @@ import type {
     ParsedArgs,
     InitArgs,
     AddArgs,
+    UsageResetArgs,
     ProfileType,
     StatuslineArgs,
 } from "../types";
@@ -153,6 +154,19 @@ export function parseAddArgs(args: string[]): AddArgs {
         result.type = normalized;
     }
 
+    return result;
+}
+
+export function parseUsageResetArgs(args: string[]): UsageResetArgs {
+    const result: UsageResetArgs = { yes: false };
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === "-y" || arg === "--yes") {
+            result.yes = true;
+            continue;
+        }
+        throw new Error(`Unknown usage-reset argument: ${arg}`);
+    }
     return result;
 }
 

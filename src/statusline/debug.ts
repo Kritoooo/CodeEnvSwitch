@@ -16,7 +16,7 @@ function resolveDefaultConfigDir(configPath: string | null): string {
     return path.join(os.homedir(), ".config", "code-env");
 }
 
-function getStatuslineDebugPath(configPath: string | null): string {
+export function getStatuslineDebugPath(configPath: string | null): string {
     const envPath = resolvePath(process.env.CODE_ENV_STATUSLINE_DEBUG_PATH);
     if (envPath) return envPath;
     return path.join(resolveDefaultConfigDir(configPath), "statusline-debug.jsonl");

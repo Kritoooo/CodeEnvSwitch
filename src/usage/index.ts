@@ -7,6 +7,7 @@ import * as os from "os";
 import type { Config, Profile, ProfileType } from "../types";
 import { resolvePath } from "../shell/utils";
 import { normalizeType, inferProfileType, getProfileDisplayName } from "../profile/type";
+import { getStatuslineDebugPath } from "../statusline/debug";
 import { calculateUsageCost, resolvePricingForProfile } from "./pricing";
 
 interface UsageRecord {
@@ -53,6 +54,17 @@ interface UsageCostIndex {
     byName: Map<string, UsageCostTotals>;
 }
 
+export interface UsageCleanupFailure {
+    path: string;
+    error: string;
+}
+
+export interface UsageCleanupResult {
+    removed: string[];
+    missing: string[];
+    failed: UsageCleanupFailure[];
+}
+
 interface UsageStateEntry {
     mtimeMs: number;
     size: number;
@@ -85,6 +97,8 @@ interface UsageStateFile {
     version: number;
     files: Record<string, UsageStateEntry>;
     sessions?: Record<string, UsageSessionEntry>;
+    usageMtimeMs?: number;
+    usageSize?: number;
 }
 
 interface ProfileLogEntry {
@@ -573,18 +587,26 @@ export function syncUsageFromStatuslineInput(
         let deltaCacheRead = cacheReadTokens - prevCacheRead;
         let deltaCacheWrite = cacheWriteTokens - prevCacheWrite;
         let deltaTotal = totalTokens - prevTotal;
-        if (
-            deltaTotal < 0 ||
-            deltaInput < 0 ||
-            deltaOutput < 0 ||
-            deltaCacheRead < 0 ||
-            deltaCacheWrite < 0
-        ) {
+        if (deltaTotal < 0) {
+            // Session reset: treat current totals as fresh usage.
             deltaInput = inputTokens;
             deltaOutput = outputTokens;
             deltaCacheRead = cacheReadTokens;
             deltaCacheWrite = cacheWriteTokens;
             deltaTotal = totalTokens;
+        } else {
+            // Clamp negatives caused by reclassification (e.g. cache splits).
+            if (deltaInput < 0) deltaInput = 0;
+            if (deltaOutput < 0) deltaOutput = 0;
+            if (deltaCacheRead < 0) deltaCacheRead = 0;
+            if (deltaCacheWrite < 0) deltaCacheWrite = 0;
+            const breakdownTotal =
+                deltaInput + deltaOutput + deltaCacheRead + deltaCacheWrite;
+            if (deltaTotal === 0 && breakdownTotal === 0) {
+                deltaTotal = 0;
+            } else if (breakdownTotal > deltaTotal) {
+                deltaTotal = breakdownTotal;
+            }
         }
 
         if (deltaTotal > 0) {
@@ -618,6 +640,7 @@ export function syncUsageFromStatuslineInput(
             model: resolvedModel,
         };
         state.sessions = sessions;
+        updateUsageStateMetadata(state, usagePath);
         writeUsageState(statePath, state);
     } finally {
         releaseLock(lockPath, lockFd);
@@ -848,7 +871,15 @@ function readUsageState(statePath: string): UsageStateFile {
             parsed.files && typeof parsed.files === "object" ? parsed.files : {};
         const sessions =
             parsed.sessions && typeof parsed.sessions === "object" ? parsed.sessions : {};
-        return { version: 1, files, sessions };
+        const usageMtimeMs = Number(parsed.usageMtimeMs);
+        const usageSize = Number(parsed.usageSize);
+        return {
+            version: 1,
+            files,
+            sessions,
+            usageMtimeMs: Number.isFinite(usageMtimeMs) ? usageMtimeMs : undefined,
+            usageSize: Number.isFinite(usageSize) ? usageSize : undefined,
+        };
     } catch {
         return { version: 1, files: {}, sessions: {} };
     }
@@ -859,7 +890,91 @@ function writeUsageState(statePath: string, state: UsageStateFile) {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    const payload = `${JSON.stringify(state, null, 2)}\n`;
+    const tmpPath = `${statePath}.tmp`;
+    try {
+        fs.writeFileSync(tmpPath, payload, "utf8");
+        fs.renameSync(tmpPath, statePath);
+    } catch {
+        try {
+            if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        } catch {
+            // ignore cleanup failures
+        }
+        fs.writeFileSync(statePath, payload, "utf8");
+    }
+}
+
+function addSiblingBackupPaths(targets: Set<string>, filePath: string | null) {
+    if (!filePath) return;
+    const dir = path.dirname(filePath);
+    let entries: fs.Dirent[] = [];
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+    const base = path.basename(filePath);
+    for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        if (entry.name === base) continue;
+        if (entry.name.startsWith(`${base}.`)) {
+            targets.add(path.join(dir, entry.name));
+        }
+    }
+}
+
+export function clearUsageHistory(
+    config: Config,
+    configPath: string | null
+): UsageCleanupResult {
+    const targets = new Set<string>();
+    const usagePath = getUsagePath(config, configPath);
+    if (usagePath) {
+        targets.add(usagePath);
+        addSiblingBackupPaths(targets, usagePath);
+    }
+    const statePath = usagePath ? getUsageStatePath(usagePath, config) : null;
+    if (statePath) {
+        targets.add(statePath);
+        targets.add(`${statePath}.lock`);
+        addSiblingBackupPaths(targets, statePath);
+    }
+    const profileLogPath = getProfileLogPath(config, configPath);
+    if (profileLogPath) {
+        targets.add(profileLogPath);
+        addSiblingBackupPaths(targets, profileLogPath);
+    }
+    const debugPath = getStatuslineDebugPath(configPath);
+    if (debugPath) {
+        targets.add(debugPath);
+        addSiblingBackupPaths(targets, debugPath);
+    }
+
+    const removed: string[] = [];
+    const missing: string[] = [];
+    const failed: UsageCleanupFailure[] = [];
+
+    for (const target of targets) {
+        if (!target) continue;
+        if (!fs.existsSync(target)) {
+            missing.push(target);
+            continue;
+        }
+        try {
+            const stat = fs.statSync(target);
+            if (!stat.isFile()) continue;
+            fs.unlinkSync(target);
+            removed.push(target);
+        } catch (err) {
+            failed.push({
+                path: target,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+
+    return { removed, missing, failed };
 }
 
 function collectSessionFiles(root: string | null): string[] {
@@ -969,10 +1084,12 @@ function parseCodexSessionFile(filePath: string): SessionStats {
     let maxTotal = 0;
     let maxInput = 0;
     let maxOutput = 0;
+    let maxCachedInput = 0;
     let hasTotal = false;
     let sumLast = 0;
     let sumLastInput = 0;
     let sumLastOutput = 0;
+    let sumLastCachedInput = 0;
     const tsRange = { start: null as string | null, end: null as string | null };
     let cwd: string | null = null;
     let sessionId: string | null = null;
@@ -1012,19 +1129,25 @@ function parseCodexSessionFile(filePath: string): SessionStats {
                 if (totalTokens > maxTotal) maxTotal = totalTokens;
                 const totalInput = Number(totalUsage.input_tokens);
                 const totalOutput = Number(totalUsage.output_tokens);
+                const totalCached = Number(totalUsage.cached_input_tokens);
                 if (Number.isFinite(totalInput) && totalInput > maxInput) {
                     maxInput = totalInput;
                 }
                 if (Number.isFinite(totalOutput) && totalOutput > maxOutput) {
                     maxOutput = totalOutput;
                 }
+                if (Number.isFinite(totalCached) && totalCached > maxCachedInput) {
+                    maxCachedInput = totalCached;
+                }
             } else {
                 const lastTokens = Number(lastUsage.total_tokens);
                 if (Number.isFinite(lastTokens)) sumLast += lastTokens;
                 const lastInput = Number(lastUsage.input_tokens);
                 const lastOutput = Number(lastUsage.output_tokens);
+                const lastCached = Number(lastUsage.cached_input_tokens);
                 if (Number.isFinite(lastInput)) sumLastInput += lastInput;
                 if (Number.isFinite(lastOutput)) sumLastOutput += lastOutput;
+                if (Number.isFinite(lastCached)) sumLastCachedInput += lastCached;
             }
         } catch {
             // ignore invalid lines
@@ -1035,14 +1158,21 @@ function parseCodexSessionFile(filePath: string): SessionStats {
         maxTotal = sumLast;
         maxInput = sumLastInput;
         maxOutput = sumLastOutput;
+        maxCachedInput = sumLastCachedInput;
     }
 
+    const cacheReadTokens = Math.max(0, maxCachedInput);
+    const inputTokens =
+        cacheReadTokens > 0 ? Math.max(0, maxInput - cacheReadTokens) : maxInput;
+    const computedTotal = inputTokens + maxOutput + cacheReadTokens;
+    const totalTokens = Math.max(maxTotal, computedTotal);
+
     return {
-        inputTokens: maxInput,
+        inputTokens,
         outputTokens: maxOutput,
-        cacheReadTokens: 0,
+        cacheReadTokens,
         cacheWriteTokens: 0,
-        totalTokens: maxTotal,
+        totalTokens,
         startTs: tsRange.start,
         endTs: tsRange.end,
         cwd,
@@ -1194,6 +1324,91 @@ function releaseLock(lockPath: string, fd: number | null) {
     }
 }
 
+function readUsageFileStat(usagePath: string): fs.Stats | null {
+    if (!usagePath || !fs.existsSync(usagePath)) return null;
+    try {
+        return fs.statSync(usagePath);
+    } catch {
+        return null;
+    }
+}
+
+function buildUsageRecordKey(record: UsageRecord): string {
+    return JSON.stringify([
+        record.ts,
+        record.type,
+        record.profileKey ?? null,
+        record.profileName ?? null,
+        record.model ?? null,
+        record.sessionId ?? null,
+        toUsageNumber(record.inputTokens),
+        toUsageNumber(record.outputTokens),
+        toUsageNumber(record.cacheReadTokens),
+        toUsageNumber(record.cacheWriteTokens),
+        toUsageNumber(record.totalTokens),
+    ]);
+}
+
+function buildUsageSessionsFromRecords(
+    records: UsageRecord[]
+): Record<string, UsageSessionEntry> {
+    const sessions: Record<string, UsageSessionEntry> = {};
+    const seen = new Set<string>();
+    for (const record of records) {
+        if (!record.sessionId) continue;
+        const normalizedType = normalizeUsageType(record.type);
+        if (!normalizedType) continue;
+        const recordKey = buildUsageRecordKey(record);
+        if (seen.has(recordKey)) continue;
+        seen.add(recordKey);
+
+        const sessionKey = buildSessionKey(
+            normalizedType as ProfileType,
+            record.sessionId
+        );
+        let entry = sessions[sessionKey];
+        if (!entry) {
+            entry = {
+                type: normalizedType as ProfileType,
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                totalTokens: 0,
+                startTs: null,
+                endTs: null,
+                cwd: null,
+                model: record.model || null,
+            };
+            sessions[sessionKey] = entry;
+        }
+        entry.inputTokens += toUsageNumber(record.inputTokens);
+        entry.outputTokens += toUsageNumber(record.outputTokens);
+        entry.cacheReadTokens += toUsageNumber(record.cacheReadTokens);
+        entry.cacheWriteTokens += toUsageNumber(record.cacheWriteTokens);
+        entry.totalTokens += toUsageNumber(record.totalTokens);
+        if (!entry.model && record.model) entry.model = record.model;
+        if (record.ts) {
+            const range = { start: entry.startTs, end: entry.endTs };
+            updateMinMaxTs(range, record.ts);
+            entry.startTs = range.start;
+            entry.endTs = range.end;
+        }
+    }
+    return sessions;
+}
+
+function updateUsageStateMetadata(state: UsageStateFile, usagePath: string) {
+    const stat = readUsageFileStat(usagePath);
+    if (!stat || !stat.isFile()) {
+        state.usageMtimeMs = undefined;
+        state.usageSize = undefined;
+        return;
+    }
+    state.usageMtimeMs = stat.mtimeMs;
+    state.usageSize = stat.size;
+}
+
 function appendUsageRecord(usagePath: string, record: UsageRecord) {
     const dir = path.dirname(usagePath);
     if (!fs.existsSync(dir)) {
@@ -1207,13 +1422,15 @@ export function readUsageRecords(usagePath: string): UsageRecord[] {
     const raw = fs.readFileSync(usagePath, "utf8");
     const lines = raw.split(/\r?\n/);
     const records: UsageRecord[] = [];
+    const seen = new Set<string>();
     for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         try {
             const parsed = JSON.parse(trimmed);
             if (!parsed || typeof parsed !== "object") continue;
-            const input = Number(parsed.inputTokens ?? 0);
+            const type = normalizeType(parsed.type) || String(parsed.type ?? "unknown");
+            let input = Number(parsed.inputTokens ?? 0);
             const output = Number(parsed.outputTokens ?? 0);
             const cacheRead = Number(
                 parsed.cacheReadTokens ??
@@ -1228,6 +1445,18 @@ export function readUsageRecords(usagePath: string): UsageRecord[] {
                     parsed.cacheWriteInputTokens ??
                     0
             );
+            if (
+                type === "codex" &&
+                Number.isFinite(cacheRead) &&
+                cacheRead > 0 &&
+                Number.isFinite(input) &&
+                Number.isFinite(output)
+            ) {
+                const rawTotal = Number(parsed.totalTokens);
+                if (Number.isFinite(rawTotal) && rawTotal <= input + output) {
+                    input = Math.max(0, input - cacheRead);
+                }
+            }
             const computedTotal =
                 (Number.isFinite(input) ? input : 0) +
                 (Number.isFinite(output) ? output : 0) +
@@ -1239,7 +1468,6 @@ export function readUsageRecords(usagePath: string): UsageRecord[] {
             const finalTotal = Number.isFinite(total)
                 ? Math.max(total, computedTotal)
                 : computedTotal;
-            const type = normalizeType(parsed.type) || String(parsed.type ?? "unknown");
             const model =
                 normalizeModelValue(parsed.model) ||
                 normalizeModelValue(parsed.model_name) ||
@@ -1253,7 +1481,7 @@ export function readUsageRecords(usagePath: string): UsageRecord[] {
                 parsed.sessionID ||
                 parsed.session ||
                 null;
-            records.push({
+            const record: UsageRecord = {
                 ts: String(parsed.ts ?? ""),
                 type,
                 profileKey: parsed.profileKey ? String(parsed.profileKey) : null,
@@ -1265,7 +1493,11 @@ export function readUsageRecords(usagePath: string): UsageRecord[] {
                 cacheReadTokens: Number.isFinite(cacheRead) ? cacheRead : 0,
                 cacheWriteTokens: Number.isFinite(cacheWrite) ? cacheWrite : 0,
                 totalTokens: Number.isFinite(finalTotal) ? finalTotal : 0,
-            });
+            };
+            const key = buildUsageRecordKey(record);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            records.push(record);
         } catch {
             // ignore invalid lines
         }
@@ -1288,7 +1520,25 @@ export function syncUsageFromSessions(
 
         const state = readUsageState(statePath);
         const files = state.files || {};
-        const sessions = state.sessions || {};
+        let sessions = state.sessions || {};
+        const usageStat = readUsageFileStat(usagePath);
+        const hasUsageData = !!usageStat && usageStat.isFile() && usageStat.size > 0;
+        const sessionsEmpty = Object.keys(sessions).length === 0;
+        const hasUsageMeta =
+            Number.isFinite(state.usageMtimeMs ?? Number.NaN) &&
+            Number.isFinite(state.usageSize ?? Number.NaN);
+        const usageOutOfSync =
+            hasUsageData &&
+            (!hasUsageMeta ||
+                state.usageMtimeMs !== usageStat.mtimeMs ||
+                state.usageSize !== usageStat.size);
+        if (hasUsageData && (sessionsEmpty || usageOutOfSync)) {
+            const records = readUsageRecords(usagePath);
+            if (records.length > 0) {
+                sessions = buildUsageSessionsFromRecords(records);
+            }
+        }
+        state.sessions = sessions;
         const codexFiles = collectSessionFiles(getCodexSessionsPath(config));
         const claudeFiles = collectSessionFiles(getClaudeSessionsPath(config));
 
@@ -1456,6 +1706,7 @@ export function syncUsageFromSessions(
 
         state.files = files;
         state.sessions = sessions;
+        updateUsageStateMetadata(state, usagePath);
         writeUsageState(statePath, state);
     } finally {
         releaseLock(lockPath, lockFd);

@@ -27,6 +27,7 @@ Usage:
   codenv launch <codex|claude> [--] [args...]
   codenv init
   codenv statusline [options]
+  codenv usage-reset [--yes]
 
 Options:
   -c, --config <path>   Path to config JSON
@@ -57,6 +58,9 @@ Statusline options:
   --usage-output <n>          Set output token usage
   --sync-usage                Sync usage from sessions before reading
 
+Usage reset options:
+  -y, --yes                   Skip confirmation prompt
+
 Examples:
   codenv init
   codenv use codex primary
@@ -67,6 +71,7 @@ Examples:
   codenv remove --all
   codenv launch codex -- --help
   codenv statusline --format json
+  codenv usage-reset --yes
   CODE_ENV_CONFIG=~/.config/code-env/config.json codenv use claude default
   codenv add --type codex primary OPENAI_BASE_URL=https://api.example.com/v1 OPENAI_API_KEY=YOUR_API_KEY
   codenv add

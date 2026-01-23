@@ -10,6 +10,7 @@ import {
     parseArgs,
     parseInitArgs,
     parseAddArgs,
+    parseUsageResetArgs,
     parseStatuslineArgs,
     printHelp,
 } from "./cli";
@@ -33,6 +34,7 @@ import {
     printUnset,
     runLaunch,
     printStatusline,
+    runUsageReset,
 } from "./commands";
 import { logProfileUse } from "./usage";
 import { createReadline, askConfirm, runInteractiveAdd, runInteractiveUse } from "./ui";
@@ -149,6 +151,15 @@ async function main() {
                 process.env.CODE_ENV_CONFIG_PATH || findConfigPath(parsed.configPath);
             const config = readConfigIfExists(configPath);
             printStatusline(config, configPath, statuslineArgs);
+            return;
+        }
+
+        if (cmd === "usage-reset" || cmd === "reset-usage") {
+            const resetArgs = parseUsageResetArgs(args.slice(1));
+            const configPath =
+                process.env.CODE_ENV_CONFIG_PATH || findConfigPath(parsed.configPath);
+            const config = readConfigIfExists(configPath);
+            await runUsageReset(config, configPath, resetArgs);
             return;
         }
 

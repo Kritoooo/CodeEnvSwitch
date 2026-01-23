@@ -80,6 +80,46 @@ codenv remove codex primary
 `codenv list`（或 `codenv ls`）会输出 `PROFILE` / `TYPE` / `NOTE` 的表格。默认项会标注在 `NOTE` 列，当前激活的配置会用绿色显示。
 如果设置了 `profile.name`，`PROFILE` 列会显示该名称；否则显示 profile 的 key（会尽量去掉旧的 `type-` 前缀）。
 
+### 清理用量历史
+
+```bash
+codenv usage-reset
+# 跳过确认
+codenv usage-reset --yes
+```
+
+该命令会删除用量历史文件（`usage.jsonl`、用量 state、`profile-log.jsonl`、`statusline-debug.jsonl`）以及配置目录中的相关备份文件。
+
+### 用量统计逻辑
+
+用量来自两条路径（状态栏输入同步 + 会话日志解析），最终追加到 `usage.jsonl`。
+
+- 文件与路径
+  - `usage.jsonl`：JSONL 记录，包含 `ts`/`type`/`profileKey`/`profileName`/`model`/`sessionId` 和 token 拆分字段。
+  - `usage.jsonl.state.json`：保存每个 session 的累计 totals + session 文件的 mtime/size，用于计算增量并避免重复统计。
+  - `profile-log.jsonl`：profile 使用与 session 绑定日志（`use`/`session`）。
+  - `statusline-debug.jsonl`：当 `CODE_ENV_STATUSLINE_DEBUG` 开启时写入的调试信息。
+  - 可通过 `usagePath`/`usageStatePath`/`profileLogPath`/`codexSessionsPath`/`claudeSessionsPath` 覆盖默认路径。
+- 会话绑定（profile -> session）
+  - `codenv init` 安装 shell 包装函数，使 `codex`/`claude` 实际走 `codenv launch`。
+  - `codenv launch` 记录 profile 使用，并在启动后短时间内（默认约 5 秒、每秒轮询）找到最新未绑定的 session 文件（优先 `cwd` 匹配），写入 `profile-log.jsonl`。
+  - 后续同步会用该绑定将 session 归因到对应 profile。
+- 状态栏同步（`codenv statusline --sync-usage`）
+  - 需要 `sessionId`、model，以及 profile（`profileKey` 或 `profileName`）才会写入用量。
+  - 从 stdin JSON 读取 totals，与 state 中的上次 totals 做差得到增量。
+  - 如果 totals 回退（session reset），直接把当前 totals 当作新增；否则对负数子项做 0 处理。
+  - 当拆分合计大于 total 时，以拆分合计为准。
+  - 把增量写入 `usage.jsonl`，并更新 state 中的 session totals。
+- 会话日志同步（`--sync-usage` 与 `codenv list`）
+  - 扫描 Codex 的 `CODEX_HOME/sessions`（或 `~/.codex/sessions`）与 Claude 的 `CLAUDE_HOME/projects`（或 `~/.claude/projects`）。
+  - Codex：读取 `event_msg` 的 token_count 记录，取累计最大值；cached input 计为 cache read，并在可判断时从 input 中扣除。
+  - Claude：汇总 `message.usage` 中的 input/output/cache tokens。
+  - 与 state 中的文件元数据和 session 最大值做差，生成增量并写入 `usage.jsonl`；无法解析到绑定的文件会被跳过。
+- 今日统计
+  - “今日”按本地时区 00:00 到次日 00:00 计算。
+- 费用换算
+  - 使用 profile 定价或 `pricing.models`（含默认值）换算，依赖 input/output/cache 拆分；缺少拆分则不显示金额。
+
 ### 添加 / 更新 profile
 
 ```bash

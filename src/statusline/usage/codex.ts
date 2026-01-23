@@ -18,21 +18,20 @@ function resolveOutputTokens(record: Record<string, unknown>): number | null {
             record.reasoningOutputTokens,
             record.reasoning_output
         ) ?? null;
-    if (outputTokens === null && reasoningTokens === null) return null;
-    if (reasoningTokens === null) return outputTokens;
-    return (outputTokens || 0) + reasoningTokens;
+    if (outputTokens !== null) return outputTokens;
+    if (reasoningTokens !== null) return reasoningTokens;
+    return null;
 }
 
-function parseCodexUsageTotalsRecord(
+function splitInputTokens(
     record: Record<string, unknown>
-): StatuslineUsageTotals | null {
-    const inputTokens =
+): { inputTokens: number | null; cacheReadTokens: number | null } {
+    const rawInput =
         firstNumber(
             record.inputTokens,
             record.input,
             record.input_tokens
         ) ?? null;
-    const outputTokens = resolveOutputTokens(record);
     const cacheRead =
         firstNumber(
             record.cached_input_tokens,
@@ -42,6 +41,23 @@ function parseCodexUsageTotalsRecord(
             record.cache_read,
             record.cacheRead
         ) ?? null;
+    if (rawInput === null) {
+        return { inputTokens: null, cacheReadTokens: cacheRead };
+    }
+    if (cacheRead === null) {
+        return { inputTokens: rawInput, cacheReadTokens: null };
+    }
+    const nonCachedInput = Math.max(0, rawInput - cacheRead);
+    return { inputTokens: nonCachedInput, cacheReadTokens: cacheRead };
+}
+
+function parseCodexUsageTotalsRecord(
+    record: Record<string, unknown>
+): StatuslineUsageTotals | null {
+    const split = splitInputTokens(record);
+    const inputTokens = split.inputTokens;
+    const outputTokens = resolveOutputTokens(record);
+    const cacheRead = split.cacheReadTokens;
     const cacheWrite =
         firstNumber(
             record.cache_creation_input_tokens,
@@ -106,22 +122,10 @@ function parseCodexInputUsageRecord(
             record.total,
             record.total_tokens
         ) ?? null;
-    const inputTokens =
-        firstNumber(
-            record.inputTokens,
-            record.input,
-            record.input_tokens
-        ) ?? null;
+    const split = splitInputTokens(record);
+    const inputTokens = split.inputTokens;
     const outputTokens = resolveOutputTokens(record);
-    const cacheRead =
-        firstNumber(
-            record.cached_input_tokens,
-            record.cachedInputTokens,
-            record.cache_read_input_tokens,
-            record.cacheReadInputTokens,
-            record.cache_read,
-            record.cacheRead
-        ) ?? null;
+    const cacheRead = split.cacheReadTokens;
     const cacheWrite =
         firstNumber(
             record.cache_creation_input_tokens,
@@ -195,15 +199,6 @@ export function getCodexUsageTotalsFromInput(
         );
         if (totalUsage) {
             const parsed = parseCodexUsageTotalsRecord(totalUsage);
-            if (parsed) return parsed;
-        }
-        const lastUsage = resolveNestedRecord(
-            tokenUsage,
-            "last_token_usage",
-            "lastTokenUsage"
-        );
-        if (lastUsage) {
-            const parsed = parseCodexUsageTotalsRecord(lastUsage);
             if (parsed) return parsed;
         }
         const parsed = parseCodexUsageTotalsRecord(tokenUsage as Record<string, unknown>);

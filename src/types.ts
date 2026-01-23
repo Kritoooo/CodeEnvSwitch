@@ -101,6 +101,10 @@ export interface AddArgs {
     type: ProfileType | null;
 }
 
+export interface UsageResetArgs {
+    yes: boolean;
+}
+
 export type StatuslineFormat = "text" | "json";
 
 export interface StatuslineArgs {
