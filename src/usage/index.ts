@@ -91,6 +91,8 @@ interface UsageSessionEntry {
     endTs: string | null;
     cwd: string | null;
     model?: string | null;
+    profileKey?: string | null;
+    profileName?: string | null;
 }
 
 interface UsageStateFile {
@@ -638,6 +640,8 @@ export function syncUsageFromStatuslineInput(
             endTs: now,
             cwd: cwd || (prev ? prev.cwd : null),
             model: resolvedModel,
+            profileKey: profileKey || null,
+            profileName: profileName || null,
         };
         state.sessions = sessions;
         updateUsageStateMetadata(state, usagePath);
@@ -1387,6 +1391,8 @@ function buildUsageSessionsFromRecords(
         entry.cacheReadTokens += toUsageNumber(record.cacheReadTokens);
         entry.cacheWriteTokens += toUsageNumber(record.cacheWriteTokens);
         entry.totalTokens += toUsageNumber(record.totalTokens);
+        if (record.profileKey) entry.profileKey = record.profileKey;
+        if (record.profileName) entry.profileName = record.profileName;
         if (!entry.model && record.model) entry.model = record.model;
         if (record.ts) {
             const range = { start: entry.startTs, end: entry.endTs };
@@ -1563,17 +1569,26 @@ export function syncUsageFromSessions(
             } catch {
                 return;
             }
-            const resolved = resolveProfileForSession(
-                config,
-                logEntries,
-                type,
-                filePath,
-                stats.sessionId
-            );
-            if (!resolved.match) return;
             const sessionKey =
                 stats.sessionId ? buildSessionKey(type, stats.sessionId) : null;
             const sessionPrev = sessionKey ? sessions[sessionKey] : null;
+            const sessionProfile =
+                sessionPrev && (sessionPrev.profileKey || sessionPrev.profileName)
+                    ? {
+                          profileKey: sessionPrev.profileKey || null,
+                          profileName: sessionPrev.profileName || null,
+                      }
+                    : null;
+            const resolved = sessionProfile
+                ? { match: sessionProfile, ambiguous: false }
+                : resolveProfileForSession(
+                      config,
+                      logEntries,
+                      type,
+                      filePath,
+                      stats.sessionId
+                  );
+            if (!resolved.match) return;
             const resolvedModel =
                 (sessionPrev && sessionPrev.model) ||
                 stats.model ||
@@ -1683,6 +1698,8 @@ export function syncUsageFromSessions(
                     endTs: stats.endTs || (sessionPrev ? sessionPrev.endTs : null),
                     cwd: stats.cwd || (sessionPrev ? sessionPrev.cwd : null),
                     model: resolvedModel,
+                    profileKey: resolved.match.profileKey,
+                    profileName: resolved.match.profileName,
                 };
             }
             files[filePath] = {
