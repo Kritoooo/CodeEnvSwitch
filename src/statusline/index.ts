@@ -99,6 +99,8 @@ export function buildStatuslineResult(
     const sessionId = getSessionId(stdinInput);
     const usageType = normalizeType(type || "");
     const stdinUsageTotals = getUsageTotalsFromInput(stdinInput, usageType);
+    const shouldSyncUsageFromSessions =
+        args.syncUsage && !stdinUsageTotals;
     const model = firstNonEmpty(
         args.model,
         process.env.CODE_ENV_MODEL,
@@ -184,7 +186,7 @@ export function buildStatuslineResult(
         type,
         profileKey,
         profileName,
-        args.syncUsage
+        shouldSyncUsageFromSessions
     );
 
     let finalUsage: StatuslineUsage | null = hasExplicitUsage ? usage : null;
@@ -236,14 +238,18 @@ export function buildStatuslineResult(
                   configPath,
                   type,
                   sessionId,
-                  args.syncUsage
+                  shouldSyncUsageFromSessions
               )
             : null;
         sessionCost =
             sessionCostFromRecords ??
             (sessionUsage ? calculateUsageCost(sessionUsage, pricing) : null);
     }
-    const costIndex = readUsageCostIndex(config, configPath, args.syncUsage);
+    const costIndex = readUsageCostIndex(
+        config,
+        configPath,
+        shouldSyncUsageFromSessions
+    );
     const costTotals = costIndex
         ? resolveUsageCostForProfile(costIndex, type, profileKey, profileName)
         : null;
