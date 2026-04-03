@@ -219,10 +219,7 @@ If nothing is found, `codenv add` writes to `~/.config/code-env/config.json`.
     "claude": "default"
   },
   "codexStatusline": {
-    "command": ["codenv", "statusline", "--type", "codex", "--sync-usage"],
-    "showHints": false,
-    "updateIntervalMs": 300,
-    "timeoutMs": 1000
+    "items": ["model-with-reasoning", "context-remaining", "current-dir", "git-branch"]
   },
   "claudeStatusline": {
     "command": "codenv statusline --type claude --sync-usage",
@@ -259,12 +256,11 @@ If nothing is found, `codenv add` writes to `~/.config/code-env/config.json`.
 Notes:
 - `unset`: global keys to clear. Type-specific defaults are applied only for the active type and won't clear the other type.
 - `defaultProfiles`: optional; map of `codex`/`claude` to profile name or key used by `codenv auto`.
-- `codexStatusline`: optional; config to inject Codex TUI status line settings when launching `codex`.
-  - `command`: string or string[]; command passed to Codex `tui.status_line.command`.
-  - `showHints`: boolean; whether Codex footer hints are appended when the status line is active.
-  - `updateIntervalMs`: number; update interval in ms for the status line command.
-  - `timeoutMs`: number; timeout in ms for the status line command.
+- `codexStatusline`: optional; config to inject official Codex TUI status line settings when launching `codex`.
+  - `items`: string[]; ordered item IDs written to `tui.status_line` in `~/.codex/config.toml`.
+  - Supported item IDs include: `model-name`, `model-with-reasoning`, `current-dir`, `project-root`, `git-branch`, `context-remaining`, `context-used`, `five-hour-limit`, `weekly-limit`, `codex-version`, `context-window-size`, `used-tokens`, `total-input-tokens`, `total-output-tokens`, `session-id`.
   - `configPath`: optional; override `~/.codex/config.toml` (also supports `CODE_ENV_CODEX_CONFIG_PATH`).
+  - If `items` is unset, `codenv` leaves Codex status-line config unchanged (Codex defaults apply).
 - `claudeStatusline`: optional; config to inject Claude Code statusLine settings when launching `claude`.
   - `command`: string (or string[]; arrays are joined into a single command string).
   - `type`: string; statusLine type (default: `command`).

@@ -19,10 +19,7 @@ export interface Profile {
 }
 
 export interface CodexStatuslineConfig {
-    command?: string | string[];
-    showHints?: boolean;
-    updateIntervalMs?: number;
-    timeoutMs?: number;
+    items?: string[];
     configPath?: string;
 }
 

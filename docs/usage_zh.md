@@ -56,6 +56,8 @@
 可通过设置 `CODE_ENV_STATUSLINE_DEBUG=1`，在 `statusline-debug.jsonl`
 （或 `CODE_ENV_STATUSLINE_DEBUG_PATH` 指定路径）看到实际 JSON。
 
+注意：使用官方 Codex 状态栏配置（`tui.status_line`）时，Codex 默认不会调用外部状态栏命令。
+
 ### Codex（token_usage totals）
 
 ```json

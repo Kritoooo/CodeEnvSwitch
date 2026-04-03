@@ -56,6 +56,9 @@ Each line is a JSON object (fields may be null/omitted depending on the source):
 To see real payloads, set `CODE_ENV_STATUSLINE_DEBUG=1` and read the JSONL entries in
 `statusline-debug.jsonl` (or the path from `CODE_ENV_STATUSLINE_DEBUG_PATH`).
 
+Note: with official Codex status line configuration (`tui.status_line`), Codex does not invoke
+an external status line command by default.
+
 ### Codex (token_usage totals)
 
 ```json

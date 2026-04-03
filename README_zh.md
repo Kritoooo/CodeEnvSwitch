@@ -218,10 +218,7 @@ codenv use codex primary | source
     "claude": "default"
   },
   "codexStatusline": {
-    "command": ["codenv", "statusline", "--type", "codex", "--sync-usage"],
-    "showHints": false,
-    "updateIntervalMs": 300,
-    "timeoutMs": 1000
+    "items": ["model-with-reasoning", "context-remaining", "current-dir", "git-branch"]
   },
   "claudeStatusline": {
     "command": "codenv statusline --type claude --sync-usage",
@@ -258,12 +255,11 @@ codenv use codex primary | source
 说明：
 - `unset`：全局需要清理的环境变量。按 type 的默认清理键只会对当前 type 生效，不会影响其他 type。
 - `defaultProfiles`：可选；`codex`/`claude` 对应的默认 profile 名称或 key，供 `codenv auto` 使用。
-- `codexStatusline`：可选；在启动 `codex` 时写入 Codex TUI status line 配置。
-  - `command`：字符串或字符串数组；写入 Codex 的 `tui.status_line.command`。
-  - `showHints`：布尔值；状态栏激活时是否拼接 footer 提示。
-  - `updateIntervalMs`：数字；状态栏命令的刷新间隔（毫秒）。
-  - `timeoutMs`：数字；状态栏命令超时（毫秒）。
+- `codexStatusline`：可选；在启动 `codex` 时写入官方 Codex TUI 状态栏配置。
+  - `items`：字符串数组；按顺序写入 `~/.codex/config.toml` 的 `tui.status_line`。
+  - 支持的 item ID 包括：`model-name`、`model-with-reasoning`、`current-dir`、`project-root`、`git-branch`、`context-remaining`、`context-used`、`five-hour-limit`、`weekly-limit`、`codex-version`、`context-window-size`、`used-tokens`、`total-input-tokens`、`total-output-tokens`、`session-id`。
   - `configPath`：可选；覆盖 `~/.codex/config.toml`（也可用 `CODE_ENV_CODEX_CONFIG_PATH`）。
+  - 若未设置 `items`，`codenv` 不会改写 Codex 状态栏配置（使用 Codex 默认值）。
 - `claudeStatusline`：可选；在启动 `claude` 时写入 Claude Code statusLine 配置。
   - `command`：字符串（或字符串数组；数组会被拼接成单个命令字符串）。
   - `type`：字符串；statusLine 类型（默认 `command`）。

@@ -95,6 +95,11 @@ interface UsageSessionEntry {
     profileName?: string | null;
 }
 
+interface UsageSessionStateFile {
+    version: number;
+    session: UsageSessionEntry;
+}
+
 interface UsageStateFile {
     version: number;
     files: Record<string, UsageStateEntry>;
@@ -569,15 +574,20 @@ export function syncUsageFromStatuslineInput(
             cacheWriteTokens;
     if (!Number.isFinite(totalTokens)) return;
 
-    const statePath = getUsageStatePath(usagePath, config);
-    const lockPath = `${statePath}.lock`;
+    const sessionKey = buildSessionKey(normalizedType, sessionId);
+    const sessionStatePath = getUsageSessionStatePath(usagePath, sessionKey);
+    const legacySessionStatePath = getLegacyUsageSessionStatePath(
+        usagePath,
+        sessionKey
+    );
+    const lockPath = `${sessionStatePath}.lock`;
     const lockFd = acquireLock(lockPath);
     if (lockFd === null) return;
     try {
-        const state = readUsageState(statePath);
-        const sessions = state.sessions || {};
-        const key = buildSessionKey(normalizedType, sessionId);
-        const prev = sessions[key];
+        const prev = readUsageSessionStateWithFallback(
+            sessionStatePath,
+            legacySessionStatePath
+        );
         const prevInput = prev ? toUsageNumber(prev.inputTokens) : 0;
         const prevOutput = prev ? toUsageNumber(prev.outputTokens) : 0;
         const prevCacheRead = prev ? toUsageNumber(prev.cacheReadTokens) : 0;
@@ -590,12 +600,11 @@ export function syncUsageFromStatuslineInput(
         let deltaCacheWrite = cacheWriteTokens - prevCacheWrite;
         let deltaTotal = totalTokens - prevTotal;
         if (deltaTotal < 0) {
-            // Session reset: treat current totals as fresh usage.
-            deltaInput = inputTokens;
-            deltaOutput = outputTokens;
-            deltaCacheRead = cacheReadTokens;
-            deltaCacheWrite = cacheWriteTokens;
-            deltaTotal = totalTokens;
+            deltaInput = 0;
+            deltaOutput = 0;
+            deltaCacheRead = 0;
+            deltaCacheWrite = 0;
+            deltaTotal = 0;
         } else {
             // Clamp negatives caused by reclassification (e.g. cache splits).
             if (deltaInput < 0) deltaInput = 0;
@@ -629,13 +638,18 @@ export function syncUsageFromStatuslineInput(
         }
 
         const now = new Date().toISOString();
-        sessions[key] = {
+        const nextInput = Math.max(prevInput, inputTokens);
+        const nextOutput = Math.max(prevOutput, outputTokens);
+        const nextCacheRead = Math.max(prevCacheRead, cacheReadTokens);
+        const nextCacheWrite = Math.max(prevCacheWrite, cacheWriteTokens);
+        const nextTotal = Math.max(prevTotal, totalTokens);
+        const nextSession: UsageSessionEntry = {
             type: normalizedType,
-            inputTokens,
-            outputTokens,
-            cacheReadTokens,
-            cacheWriteTokens,
-            totalTokens,
+            inputTokens: nextInput,
+            outputTokens: nextOutput,
+            cacheReadTokens: nextCacheRead,
+            cacheWriteTokens: nextCacheWrite,
+            totalTokens: nextTotal,
             startTs: prev ? prev.startTs : now,
             endTs: now,
             cwd: cwd || (prev ? prev.cwd : null),
@@ -643,9 +657,7 @@ export function syncUsageFromStatuslineInput(
             profileKey: profileKey || null,
             profileName: profileName || null,
         };
-        state.sessions = sessions;
-        updateUsageStateMetadata(state, usagePath);
-        writeUsageState(statePath, state);
+        writeUsageSessionState(sessionStatePath, nextSession);
     } finally {
         releaseLock(lockPath, lockFd);
     }
@@ -861,6 +873,38 @@ function resolveProfileForSession(
     return { match: null, ambiguous: false };
 }
 
+export function resolveProfileFromLog(
+    config: Config,
+    configPath: string | null,
+    type: ProfileType | null,
+    terminalTag: string | null
+): { profileKey: string | null; profileName: string | null } | null {
+    const normalizedType = normalizeType(type || "");
+    if (!normalizedType) return null;
+    const profileLogPath = getProfileLogPath(config, configPath);
+    const entries = readProfileLogEntries([profileLogPath]);
+    if (entries.length === 0) return null;
+    if (!terminalTag) return null;
+    let best: ProfileLogEntry | null = null;
+    let bestTime = Number.NEGATIVE_INFINITY;
+    for (const entry of entries) {
+        if (entry.kind !== "use") continue;
+        if (entry.profileType !== normalizedType) continue;
+        if (entry.terminalTag !== terminalTag) continue;
+        if (!entry.profileKey && !entry.profileName) continue;
+        const ts = new Date(entry.timestamp).getTime();
+        if (!Number.isFinite(ts)) continue;
+        if (ts >= bestTime) {
+            bestTime = ts;
+            best = entry;
+        }
+    }
+    if (!best) return null;
+    const match = normalizeProfileMatch(config, best, normalizedType);
+    if (!match.profileKey && !match.profileName) return null;
+    return match;
+}
+
 function readUsageState(statePath: string): UsageStateFile {
     if (!statePath || !fs.existsSync(statePath)) {
         return { version: 1, files: {}, sessions: {} };
@@ -909,6 +953,62 @@ function writeUsageState(statePath: string, state: UsageStateFile) {
     }
 }
 
+function getUsageSessionStateDir(usagePath: string): string {
+    const dir = path.dirname(usagePath);
+    const base = path.basename(usagePath, path.extname(usagePath));
+    return path.join(dir, `${base}-sessions`);
+}
+
+function getLegacyUsageSessionStateDir(usagePath: string): string {
+    return `${usagePath}.sessions`;
+}
+
+function toSafeSessionKey(value: string): string {
+    return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function getUsageSessionStatePath(usagePath: string, sessionKey: string): string {
+    const dir = getUsageSessionStateDir(usagePath);
+    return path.join(dir, `${toSafeSessionKey(sessionKey)}.json`);
+}
+
+function getLegacyUsageSessionStatePath(usagePath: string, sessionKey: string): string {
+    const dir = getLegacyUsageSessionStateDir(usagePath);
+    return path.join(dir, `${toSafeSessionKey(sessionKey)}.json`);
+}
+
+function readUsageSessionState(filePath: string): UsageSessionEntry | null {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    try {
+        const raw = fs.readFileSync(filePath, "utf8");
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return null;
+        const session =
+            (parsed as UsageSessionStateFile).session ??
+            (parsed as UsageSessionEntry);
+        if (!session || typeof session !== "object") return null;
+        return session as UsageSessionEntry;
+    } catch {
+        return null;
+    }
+}
+
+function readUsageSessionStateWithFallback(
+    primaryPath: string,
+    legacyPath: string
+): UsageSessionEntry | null {
+    return readUsageSessionState(primaryPath) || readUsageSessionState(legacyPath);
+}
+
+function writeUsageSessionState(filePath: string, session: UsageSessionEntry): void {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    const payload: UsageSessionStateFile = { version: 1, session };
+    fs.writeFileSync(filePath, `${JSON.stringify(payload)}\n`, "utf8");
+}
+
 function addSiblingBackupPaths(targets: Set<string>, filePath: string | null) {
     if (!filePath) return;
     const dir = path.dirname(filePath);
@@ -937,6 +1037,20 @@ export function clearUsageHistory(
     if (usagePath) {
         targets.add(usagePath);
         addSiblingBackupPaths(targets, usagePath);
+        for (const sessionDir of [
+            getUsageSessionStateDir(usagePath),
+            getLegacyUsageSessionStateDir(usagePath),
+        ]) {
+            try {
+                const entries = fs.readdirSync(sessionDir, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (!entry.isFile()) continue;
+                    targets.add(path.join(sessionDir, entry.name));
+                }
+            } catch {
+                // ignore session state cleanup failures
+            }
+        }
     }
     const statePath = usagePath ? getUsageStatePath(usagePath, config) : null;
     if (statePath) {

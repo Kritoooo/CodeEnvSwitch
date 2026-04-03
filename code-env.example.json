@@ -5,10 +5,7 @@
     "claude": "default"
   },
   "codexStatusline": {
-    "command": ["codenv", "statusline", "--type", "codex", "--sync-usage"],
-    "showHints": false,
-    "updateIntervalMs": 300,
-    "timeoutMs": 1000
+    "items": ["model-with-reasoning", "context-remaining", "current-dir", "git-branch"]
   },
   "claudeStatusline": {
     "command": "codenv statusline --type claude --sync-usage",

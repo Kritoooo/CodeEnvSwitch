@@ -6,10 +6,12 @@ import { buildListRows } from "../profile/display";
 import { getResolvedDefaultProfileKeys } from "../config/defaults";
 import {
     formatTokenCount,
+    getUsagePath,
     readUsageCostIndex,
     readUsageTotalsIndex,
     resolveUsageCostForProfile,
     resolveUsageTotalsForProfile,
+    syncUsageFromSessions,
 } from "../usage";
 import { formatUsdAmount } from "../usage/pricing";
 
@@ -20,7 +22,15 @@ export function printList(config: Config, configPath: string | null): void {
         return;
     }
     try {
-        const usageTotals = readUsageTotalsIndex(config, configPath, true);
+        const usagePath = getUsagePath(config, configPath);
+        if (usagePath) {
+            syncUsageFromSessions(config, configPath, usagePath);
+        }
+    } catch {
+        // ignore usage sync errors
+    }
+    try {
+        const usageTotals = readUsageTotalsIndex(config, configPath, false);
         const usageCosts = readUsageCostIndex(config, configPath, false);
         if (usageTotals) {
             for (const row of rows) {

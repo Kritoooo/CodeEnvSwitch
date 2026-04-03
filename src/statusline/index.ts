@@ -6,6 +6,7 @@ import { normalizeType, inferProfileType, getProfileDisplayName } from "../profi
 import {
     readUsageCostIndex,
     readUsageSessionCost,
+    resolveProfileFromLog,
     resolveUsageCostForProfile,
     syncUsageFromStatuslineInput,
 } from "../usage";
@@ -62,7 +63,7 @@ export function buildStatuslineResult(
     let type = normalizeTypeValue(typeCandidate);
     const envProfile = resolveEnvProfile(type);
 
-    const profileKey = firstNonEmpty(
+    let profileKey = firstNonEmpty(
         args.profileKey,
         envProfile.key,
         inputProfile ? inputProfile.key : null
@@ -73,6 +74,21 @@ export function buildStatuslineResult(
         inputProfile ? inputProfile.name : null
     );
 
+    const terminalTag = process.env.CODE_ENV_TERMINAL_TAG || null;
+    if (!profileKey && !profileName) {
+        const fallback = resolveProfileFromLog(
+            config,
+            configPath,
+            normalizeType(type || ""),
+            terminalTag
+        );
+        if (fallback) {
+            profileKey = fallback.profileKey;
+            profileName = fallback.profileName;
+        }
+    }
+
+    const sessionId = getSessionId(stdinInput);
     if (profileKey && !profileName && config.profiles && config.profiles[profileKey]) {
         const profile = config.profiles[profileKey];
         profileName = getProfileDisplayName(profileKey, profile, type || undefined);
@@ -96,7 +112,6 @@ export function buildStatuslineResult(
         process.cwd()
     )!;
 
-    const sessionId = getSessionId(stdinInput);
     const usageType = normalizeType(type || "");
     const stdinUsageTotals = getUsageTotalsFromInput(stdinInput, usageType);
     const shouldSyncUsageFromSessions =
