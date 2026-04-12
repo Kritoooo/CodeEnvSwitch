@@ -5,7 +5,6 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawn } from "child_process";
 import type { Config, ProfileType } from "../types";
-import { CODEX_AUTH_PATH } from "../constants";
 import { normalizeType } from "../profile/type";
 import {
     getCodexSessionsPath,
@@ -16,6 +15,7 @@ import {
 } from "../usage";
 import { ensureClaudeStatusline } from "../statusline/claude";
 import { ensureCodexStatuslineConfig } from "../statusline/codex";
+import { resolveCodexProfileFromEnv, syncCodexProfile } from "../codex/config";
 
 const SESSION_BINDING_POLL_MS = 1000;
 const SESSION_BINDING_START_GRACE_MS = 5000;
@@ -203,24 +203,6 @@ function getProfileEnv(type: ProfileType): { key: string | null; name: string | 
     return { key, name };
 }
 
-function writeCodexAuthFromEnv(): void {
-    const apiKey = process.env.OPENAI_API_KEY;
-    try {
-        fs.mkdirSync(path.dirname(CODEX_AUTH_PATH), { recursive: true });
-    } catch {
-        // ignore
-    }
-    const authJson =
-        apiKey === null || apiKey === undefined || apiKey === ""
-            ? "null"
-            : JSON.stringify({ OPENAI_API_KEY: String(apiKey) });
-    try {
-        fs.writeFileSync(CODEX_AUTH_PATH, `${authJson}\n`, "utf8");
-    } catch {
-        // ignore
-    }
-}
-
 function parseBooleanEnv(value: string | undefined): boolean | null {
     if (value === undefined) return null;
     const normalized = String(value).trim().toLowerCase();
@@ -259,11 +241,18 @@ export async function runLaunch(
     if (!type) {
         throw new Error(`Unknown launch target: ${target}`);
     }
+    const { key: profileKey, name: profileName } = getProfileEnv(type);
     if (type === "codex") {
-        writeCodexAuthFromEnv();
+        const codexProfileKey = resolveCodexProfileFromEnv(
+            config,
+            profileKey,
+            profileName
+        );
+        if (codexProfileKey) {
+            syncCodexProfile(config, codexProfileKey);
+        }
     }
 
-    const { key: profileKey, name: profileName } = getProfileEnv(type);
     const terminalTag = process.env.CODE_ENV_TERMINAL_TAG || null;
     const cwd = process.cwd();
     const startMs = Date.now();

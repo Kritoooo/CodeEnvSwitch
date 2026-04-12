@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * codenv - switch Claude/Codex env vars
+ * codenv - switch Claude/Codex profiles
  * Main entry point
  */
 import * as fs from "fs";
@@ -38,6 +38,11 @@ import {
 } from "./commands";
 import { logProfileUse } from "./usage";
 import { createReadline, askConfirm, runInteractiveAdd, runInteractiveUse } from "./ui";
+import {
+    clearManagedCodexProfile,
+    resolveCodexProfileFromEnv,
+    syncCodexProfile,
+} from "./codex/config";
 
 function getErrorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -59,6 +64,30 @@ async function main() {
 
     const cmd = args[0];
     try {
+        if (cmd === "__codex-sync") {
+            const configPath =
+                process.env.CODE_ENV_CONFIG_PATH || findConfigPath(parsed.configPath);
+            const config = readConfigIfExists(configPath);
+            const profileKey = process.env.CODE_ENV_PROFILE_KEY_CODEX || null;
+            const profileName = process.env.CODE_ENV_PROFILE_NAME_CODEX || null;
+            const resolvedProfile = resolveCodexProfileFromEnv(
+                config,
+                profileKey,
+                profileName
+            );
+            if (!resolvedProfile) return;
+            syncCodexProfile(config, resolvedProfile);
+            return;
+        }
+
+        if (cmd === "__codex-clear") {
+            const configPath =
+                process.env.CODE_ENV_CONFIG_PATH || findConfigPath(parsed.configPath);
+            const config = readConfigIfExists(configPath);
+            clearManagedCodexProfile(config);
+            return;
+        }
+
         if (cmd === "init") {
             const initArgs = parseInitArgs(args.slice(1));
             const shellName = detectShell(initArgs.shell);

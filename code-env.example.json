@@ -71,7 +71,7 @@
     "p_a1b2c3": {
       "name": "primary",
       "type": "codex",
-      "note": "Primary endpoint",
+      "note": "Primary endpoint (applied via ~/.codex/config.toml)",
       "env": {
         "OPENAI_BASE_URL": "https://api.example.com/v1",
         "OPENAI_API_KEY": "YOUR_API_KEY"
@@ -83,7 +83,7 @@
     "p_d4e5f6": {
       "name": "secondary",
       "type": "codex",
-      "note": "Secondary endpoint",
+      "note": "Secondary endpoint (applied via ~/.codex/config.toml)",
       "env": {
         "OPENAI_BASE_URL": "https://api.secondary.example.com/v1",
         "OPENAI_API_KEY": "YOUR_API_KEY"

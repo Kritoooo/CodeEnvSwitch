@@ -1,6 +1,6 @@
 # code-env-switch
 
-一个轻量的 CLI，用于在 Claude Code 与 Codex 的环境变量之间快速切换。
+一个轻量的 CLI，用于在 Claude Code 与 Codex profile 之间快速切换。
 
 [English](README.md)
 
@@ -103,6 +103,12 @@ codenv add --type codex primary OPENAI_BASE_URL=https://api.example.com/v1 OPENA
 当设置 `--type` 时，名称保持不变，`type` 会单独存储。
 profiles 使用内部 key，展示名称存放在 `profile.name`。
 
+为了兼容旧配置，Codex profile 仍然在 JSON 里保存
+`OPENAI_BASE_URL` / `OPENAI_API_KEY`。但在实际应用 Codex profile 时，
+`codenv` 会先清理这些 shell 变量，再把对应值写入
+`~/.codex/config.toml` 的 `model_provider = "OpenAI"` 与
+`[model_providers.OpenAI]`，并同步写入 `~/.codex/auth.json`。
+
 交互式添加（默认）：
 
 ```bash
@@ -144,6 +150,10 @@ codenv init --shell zsh
 
 该包装函数会让 `codenv use` 和 `codenv unset` 在当前终端自动生效。
 如果只想打印片段而不写入，可用 `codenv init --print`。
+
+对于 Codex profile，新的应用方式仍然读取旧 profile 里的 `OPENAI_*`
+字段，但真正生效的是 `~/.codex/config.toml` 与 `~/.codex/auth.json`，
+而不是导出的 `OPENAI_BASE_URL` / `OPENAI_API_KEY` 环境变量。
 
 ### 默认 profile 自动生效（按 type）
 
@@ -187,6 +197,9 @@ codenv unset
 # 或一次性执行
 eval "$(codenv unset)"
 ```
+
+对于 Codex，`codenv unset` 还会恢复 `codenv` 接管前备份的
+`~/.codex/config.toml` 与 `~/.codex/auth.json`。
 
 ### Fish shell
 

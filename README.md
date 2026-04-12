@@ -1,6 +1,6 @@
 # code-env-switch
 
-A tiny CLI to switch between Claude Code and Codex environment variables.
+A tiny CLI to switch between Claude Code and Codex profiles.
 
 [中文说明](README_zh.md)
 
@@ -103,6 +103,12 @@ codenv add --type codex primary OPENAI_BASE_URL=https://api.example.com/v1 OPENA
 When `--type` is set, the profile name is kept as-is and `type` is stored separately.
 Profiles are keyed by an internal id; the human-facing name lives in `profile.name`.
 
+Codex profiles continue to store `OPENAI_BASE_URL` and `OPENAI_API_KEY` in the
+JSON config for backward compatibility. When a Codex profile is applied,
+`codenv` now unsets those shell variables, writes `~/.codex/config.toml` with
+`model_provider = "OpenAI"` plus a `[model_providers.OpenAI]` block, and writes
+`~/.codex/auth.json` with the matching API key.
+
 Interactive add (default):
 
 ```bash
@@ -146,6 +152,11 @@ This wrapper makes `codenv use` and `codenv unset` apply automatically in the
 current shell. To print the snippet without writing to rc, use
 `codenv init --print`.
 
+For Codex profiles, the generated shell snippet keeps reading the legacy
+`OPENAI_*` values from your `codenv` profile, but the applied runtime state now
+comes from `~/.codex/config.toml` and `~/.codex/auth.json` instead of exported
+`OPENAI_BASE_URL` / `OPENAI_API_KEY` variables.
+
 ### Auto-apply default profiles (per type)
 
 Set a default per type (codex/claude) and re-run `codenv init`:
@@ -188,6 +199,9 @@ codenv unset
 # or one-off without init
 eval "$(codenv unset)"
 ```
+
+For Codex, `codenv unset` also restores the previous `~/.codex/config.toml` and
+`~/.codex/auth.json` state captured before the last `codenv`-managed switch.
 
 ### Fish shell
 

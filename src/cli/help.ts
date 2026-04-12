@@ -3,7 +3,7 @@
  */
 
 export function printHelp(): void {
-    const msg = `codenv - switch Claude/Codex env vars
+    const msg = `codenv - switch Claude/Codex profiles
 
 Usage:
   codenv list

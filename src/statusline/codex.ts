@@ -2,13 +2,10 @@
  * Codex CLI status line integration (official schema)
  */
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import type { Config } from "../types";
-import { expandEnv, resolvePath } from "../shell/utils";
+import { resolveCodexConfigPath } from "../codex/config";
 import { askConfirm, createReadline } from "../ui";
-
-const DEFAULT_CODEX_CONFIG_PATH = path.join(os.homedir(), ".codex", "config.toml");
 
 interface ParsedTuiConfig {
     statusLineItems: string[] | null;
@@ -38,20 +35,6 @@ function parseBooleanEnv(value: string | undefined): boolean | null {
     if (["1", "true", "yes", "on"].includes(normalized)) return true;
     if (["0", "false", "no", "off"].includes(normalized)) return false;
     return null;
-}
-
-function resolveCodexConfigPath(config: Config): string {
-    const envOverride = process.env.CODE_ENV_CODEX_CONFIG_PATH;
-    if (envOverride && String(envOverride).trim()) {
-        const expanded = expandEnv(String(envOverride).trim());
-        return resolvePath(expanded) || DEFAULT_CODEX_CONFIG_PATH;
-    }
-    const configOverride = config.codexStatusline?.configPath;
-    if (configOverride && String(configOverride).trim()) {
-        const expanded = expandEnv(String(configOverride).trim());
-        return resolvePath(expanded) || DEFAULT_CODEX_CONFIG_PATH;
-    }
-    return DEFAULT_CODEX_CONFIG_PATH;
 }
 
 function resolveDesiredStatusLineItems(config: Config): string[] | null {

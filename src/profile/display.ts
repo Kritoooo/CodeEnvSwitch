@@ -36,6 +36,20 @@ export function envMatchesProfile(profile: Profile | undefined): boolean {
     return Object.keys(profile.env).length > 0;
 }
 
+export function markerMatchesProfile(
+    profileKey: string,
+    profile: Profile | undefined,
+    activeType: ProfileType | null
+): boolean {
+    if (!activeType) return false;
+    const suffix = activeType.toUpperCase();
+    const activeKey = process.env[`CODE_ENV_PROFILE_KEY_${suffix}`];
+    if (activeKey) return activeKey === profileKey;
+    const activeName = process.env[`CODE_ENV_PROFILE_NAME_${suffix}`];
+    if (!activeName || !profile) return false;
+    return activeName === getProfileDisplayName(profileKey, profile, activeType);
+}
+
 // Forward declaration to avoid circular dependency
 // getResolvedDefaultProfileKeys will be imported from config/defaults
 export function buildListRows(
@@ -63,7 +77,9 @@ export function buildListRows(
         if (defaultLabel) noteParts.push(defaultLabel);
         if (note) noteParts.push(note);
         const noteText = noteParts.join(" | ");
-        const active = envMatchesProfile(safeProfile);
+        const active =
+            markerMatchesProfile(key, safeProfile, usageType) ||
+            envMatchesProfile(safeProfile);
         return { key, name: displayName, type, note: noteText, active, usageType };
     });
     rows.sort((a, b) => {

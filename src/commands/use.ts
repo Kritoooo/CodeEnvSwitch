@@ -1,9 +1,7 @@
 /**
  * Use command - apply profile environment
  */
-import * as path from "path";
 import type { Config, ProfileType } from "../types";
-import { CODEX_AUTH_PATH } from "../constants";
 import { shellEscape, expandEnv } from "../shell/utils";
 import { inferProfileType, getProfileDisplayName } from "../profile/type";
 import { shouldRemoveCodexAuth } from "../profile/match";
@@ -28,6 +26,10 @@ export function buildUseLines(
     const unsetKeys = new Set<string>();
     const activeType = inferProfileType(profileName, profile, requestedType);
     const effectiveEnv = buildEffectiveEnv(profile, activeType);
+    const managedCodexKeys =
+        activeType === "codex"
+            ? new Set(["OPENAI_BASE_URL", "OPENAI_API_KEY"])
+            : new Set<string>();
 
     const addUnset = (key: string) => {
         if (unsetKeys.has(key)) return;
@@ -49,6 +51,13 @@ export function buildUseLines(
     }
 
     for (const key of Object.keys(effectiveEnv)) {
+        if (managedCodexKeys.has(key)) {
+            if (!unsetKeys.has(key)) {
+                unsetKeys.add(key);
+                unsetLines.push(`unset ${key}`);
+            }
+            continue;
+        }
         const value = effectiveEnv[key];
         if (value === null || value === undefined || value === "") {
             if (!unsetKeys.has(key)) {
@@ -75,16 +84,7 @@ export function buildUseLines(
     }
 
     if (shouldRemoveCodexAuth(profileName, profile, requestedType)) {
-        const codexApiKey = effectiveEnv.OPENAI_API_KEY;
-        const authDir = path.dirname(CODEX_AUTH_PATH);
-        const authJson =
-            codexApiKey === null || codexApiKey === undefined || codexApiKey === ""
-                ? "null"
-                : JSON.stringify({ OPENAI_API_KEY: String(codexApiKey) });
-        postLines.push(`mkdir -p ${shellEscape(authDir)}`);
-        postLines.push(
-            `printf '%s\\n' ${shellEscape(authJson)} > ${shellEscape(CODEX_AUTH_PATH)}`
-        );
+        postLines.push("command codenv __codex-sync");
     }
 
     if (Array.isArray(profile.removeFiles)) {
