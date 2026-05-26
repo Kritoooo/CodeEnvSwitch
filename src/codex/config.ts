@@ -164,6 +164,20 @@ function removeSection(text: string, headerRegex: RegExp): string {
     return "";
 }
 
+function replaceSection(
+    text: string,
+    range: TomlSectionRange,
+    sectionText: string
+): string {
+    const before = text.slice(0, range.start).trimEnd();
+    const after = text.slice(range.end).trimStart();
+    const normalizedSection = sectionText.trimEnd();
+    if (before && after) return `${before}\n\n${normalizedSection}\n\n${after}`;
+    if (before) return `${before}\n\n${normalizedSection}\n`;
+    if (after) return `${normalizedSection}\n\n${after}`;
+    return `${normalizedSection}\n`;
+}
+
 function appendSection(text: string, sectionText: string): string {
     const trimmed = text.trimEnd();
     if (!trimmed) return `${sectionText}\n`;
@@ -179,6 +193,62 @@ function readProviderSectionText(text: string): string | null {
     return range ? range.sectionText : null;
 }
 
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getTomlKeyRegex(key: string): RegExp {
+    return new RegExp(`^\\s*${escapeRegex(key)}\\s*=`);
+}
+
+function getLeadingWhitespace(value: string): string {
+    const match = value.match(/^\s*/);
+    return match ? match[0] : "";
+}
+
+function hasTomlKey(sectionText: string, key: string): boolean {
+    const keyRegex = getTomlKeyRegex(key);
+    return sectionText
+        .split(/\r?\n/)
+        .slice(1)
+        .some((line) => keyRegex.test(line));
+}
+
+function setTomlKey(sectionText: string, key: string, value: string): string {
+    const lines = sectionText.split(/\r?\n/);
+    const keyRegex = getTomlKeyRegex(key);
+    const rendered = `${key} = ${value}`;
+    let replaced = false;
+
+    for (let i = 1; i < lines.length; i++) {
+        if (!keyRegex.test(lines[i])) continue;
+        if (!replaced) {
+            lines[i] = `${getLeadingWhitespace(lines[i])}${rendered}`;
+            replaced = true;
+            continue;
+        }
+        lines.splice(i, 1);
+        i--;
+    }
+
+    if (!replaced) lines.push(rendered);
+    return lines.join("\n").trimEnd();
+}
+
+function ensureTomlKey(sectionText: string, key: string, value: string): string {
+    if (hasTomlKey(sectionText, key)) return sectionText;
+    return setTomlKey(sectionText, key, value);
+}
+
+function removeTomlKey(sectionText: string, key: string): string {
+    const keyRegex = getTomlKeyRegex(key);
+    return sectionText
+        .split(/\r?\n/)
+        .filter((line, index) => index === 0 || !keyRegex.test(line))
+        .join("\n")
+        .trimEnd();
+}
+
 function renderProviderSection(baseUrl: string | null): string {
     const lines = [
         `[model_providers.${CODEX_PROVIDER_NAME}]`,
@@ -190,6 +260,30 @@ function renderProviderSection(baseUrl: string | null): string {
     lines.push(`wire_api = ${JSON.stringify(CODEX_PROVIDER_WIRE_API)}`);
     lines.push("requires_openai_auth = true");
     return lines.join("\n");
+}
+
+function mergeProviderSection(
+    sectionText: string,
+    baseUrl: string | null
+): string {
+    let merged = sectionText;
+    merged = ensureTomlKey(
+        merged,
+        "name",
+        JSON.stringify(CODEX_PROVIDER_NAME)
+    );
+    if (baseUrl) {
+        merged = setTomlKey(merged, "base_url", JSON.stringify(baseUrl));
+    } else {
+        merged = removeTomlKey(merged, "base_url");
+    }
+    merged = setTomlKey(
+        merged,
+        "wire_api",
+        JSON.stringify(CODEX_PROVIDER_WIRE_API)
+    );
+    merged = setTomlKey(merged, "requires_openai_auth", "true");
+    return merged;
 }
 
 function ensureBackup(configPath: string, currentConfigText: string): void {
@@ -208,17 +302,53 @@ function writeManagedConfig(configPath: string, baseUrl: string | null): void {
     ensureBackup(configPath, currentText);
 
     let updated = currentText;
-    updated = removeSection(updated, getProviderHeaderRegex());
     updated = removeModelProviderLine(updated);
     updated = insertRootLine(
         updated,
         `model_provider = ${JSON.stringify(CODEX_PROVIDER_NAME)}`
     );
-    updated = appendSection(updated, renderProviderSection(baseUrl));
+    const providerRange = parseSectionByHeader(updated, getProviderHeaderRegex());
+    if (providerRange) {
+        updated = replaceSection(
+            updated,
+            providerRange,
+            mergeProviderSection(providerRange.sectionText, baseUrl)
+        );
+    } else {
+        updated = appendSection(updated, renderProviderSection(baseUrl));
+    }
     writeText(configPath, updated);
 }
 
 function writeManagedAuth(apiKey: string | null): void {
+    const currentText = readTextIfExists(CODEX_AUTH_PATH);
+    let auth: Record<string, unknown> | null = null;
+
+    if (currentText) {
+        try {
+            const parsed = JSON.parse(currentText);
+            if (
+                parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed)
+            ) {
+                auth = parsed as Record<string, unknown>;
+            }
+        } catch {
+            auth = null;
+        }
+    }
+
+    if (auth) {
+        if (apiKey === null) {
+            delete auth.OPENAI_API_KEY;
+        } else {
+            auth.OPENAI_API_KEY = apiKey;
+        }
+        writeText(CODEX_AUTH_PATH, `${JSON.stringify(auth, null, 2)}\n`);
+        return;
+    }
+
     const authJson =
         apiKey === null
             ? "null"
