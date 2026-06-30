@@ -99,7 +99,7 @@ function parseSectionByHeader(
     const start = match.index;
     const afterHeader = start + match[0].length;
     const rest = text.slice(afterHeader);
-    const nextHeaderMatch = rest.match(/^\s*\[.*?\]\s*$/m);
+    const nextHeaderMatch = rest.match(/^[^\S\r\n]*\[.*?\][^\S\r\n]*$/m);
     const end = nextHeaderMatch
         ? afterHeader + (nextHeaderMatch.index ?? rest.length)
         : text.length;
@@ -111,7 +111,7 @@ function parseSectionByHeader(
 }
 
 function getFirstSectionIndex(text: string): number {
-    const match = text.match(/^\s*\[.*?\]\s*$/m);
+    const match = text.match(/^[^\S\r\n]*\[.*?\][^\S\r\n]*$/m);
     if (!match || match.index === undefined) return text.length;
     return match.index;
 }
@@ -126,13 +126,16 @@ function getRootText(text: string): { root: string; rest: string } {
 
 function readModelProviderLine(text: string): string | null {
     const { root } = getRootText(text);
-    const match = root.match(/^\s*model_provider\s*=.*$/m);
+    const match = root.match(/^[^\S\r\n]*model_provider[^\S\r\n]*=.*$/m);
     return match ? match[0].trimEnd() : null;
 }
 
 function removeModelProviderLine(text: string): string {
     const { root, rest } = getRootText(text);
-    const updatedRoot = root.replace(/^\s*model_provider\s*=.*(?:\r?\n)?/m, "");
+    const updatedRoot = root.replace(
+        /^[^\S\r\n]*model_provider[^\S\r\n]*=.*(?:\r?\n)?/m,
+        ""
+    );
     return `${updatedRoot}${rest}`;
 }
 
@@ -185,7 +188,7 @@ function appendSection(text: string, sectionText: string): string {
 }
 
 function getProviderHeaderRegex(): RegExp {
-    return /^\s*\[model_providers\.OpenAI\]\s*$/m;
+    return /^[^\S\r\n]*\[model_providers\.OpenAI\][^\S\r\n]*$/m;
 }
 
 function readProviderSectionText(text: string): string | null {

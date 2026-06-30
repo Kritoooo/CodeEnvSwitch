@@ -166,7 +166,7 @@ function parseSectionByHeader(
     const start = match.index;
     const afterHeader = start + match[0].length;
     const rest = text.slice(afterHeader);
-    const nextHeaderMatch = rest.match(/^\s*\[.*?\]\s*$/m);
+    const nextHeaderMatch = rest.match(/^[^\S\r\n]*\[.*?\][^\S\r\n]*$/m);
     const end = nextHeaderMatch
         ? afterHeader + (nextHeaderMatch.index ?? rest.length)
         : text.length;
@@ -178,7 +178,10 @@ function parseSectionByHeader(
 }
 
 function parseTuiSection(text: string): TuiSection | null {
-    const section = parseSectionByHeader(text, /^\s*\[tui\]\s*$/m);
+    const section = parseSectionByHeader(
+        text,
+        /^[^\S\r\n]*\[tui\][^\S\r\n]*$/m
+    );
     if (!section) return null;
 
     return {
@@ -192,7 +195,10 @@ function parseTuiSection(text: string): TuiSection | null {
 }
 
 function parseLegacyStatusLineSection(text: string): TomlSectionRange | null {
-    return parseSectionByHeader(text, /^\s*\[tui\.status_line\]\s*$/m);
+    return parseSectionByHeader(
+        text,
+        /^[^\S\r\n]*\[tui\.status_line\][^\S\r\n]*$/m
+    );
 }
 
 function statusLineItemsMatch(
