@@ -3,7 +3,7 @@
  */
 import type { Config, ProfileType } from "../types";
 import { shellEscape, expandEnv } from "../shell/utils";
-import { inferProfileType, getProfileDisplayName } from "../profile/type";
+import { inferProfileType, isLoginProfile, getProfileDisplayName } from "../profile/type";
 import { shouldRemoveCodexAuth } from "../profile/match";
 import { buildEffectiveEnv } from "../profile/display";
 import { getFilteredUnsetKeys, getTypeDefaultUnsetKeys } from "../config/defaults";
@@ -84,7 +84,11 @@ export function buildUseLines(
     }
 
     if (shouldRemoveCodexAuth(profileName, profile, requestedType)) {
-        postLines.push("command codenv __codex-sync");
+        postLines.push(
+            isLoginProfile(profile)
+                ? "command codenv __codex-clear"
+                : "command codenv __codex-sync"
+        );
     }
 
     if (Array.isArray(profile.removeFiles)) {

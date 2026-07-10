@@ -100,6 +100,18 @@
         "ANTHROPIC_API_KEY": "YOUR_API_KEY",
         "ANTHROPIC_BASE_URL": "https://api.example.com"
       }
+    },
+    "p_j0k1l2": {
+      "name": "chatgpt",
+      "type": "codex",
+      "authMode": "login",
+      "note": "Official ChatGPT login (restores ~/.codex/auth.json)"
+    },
+    "p_m3n4o5": {
+      "name": "personal",
+      "type": "claude",
+      "authMode": "login",
+      "note": "Claude.ai account login (unsets ANTHROPIC_* vars)"
     }
   }
 }

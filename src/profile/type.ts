@@ -15,6 +15,11 @@ export function normalizeType(value: string | null | undefined): ProfileType | n
     return null;
 }
 
+export function isLoginProfile(profile: Profile | undefined): boolean {
+    if (!profile || !profile.authMode) return false;
+    return String(profile.authMode).trim().toLowerCase() === "login";
+}
+
 export function hasTypePrefix(name: string, type: ProfileType): boolean {
     if (!name) return false;
     const lowered = String(name).toLowerCase();

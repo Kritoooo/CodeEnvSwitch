@@ -50,6 +50,25 @@ export async function askType(rl: readline.Interface): Promise<ProfileType> {
     }
 }
 
+export async function askAuthMode(rl: readline.Interface): Promise<"api" | "login"> {
+    while (true) {
+        const answer = String(
+            await ask(rl, "Select auth (1=API key, 2=account login, default: 1): ")
+        )
+            .trim()
+            .toLowerCase();
+        if (answer === "" || answer === "1") return "api";
+        if (answer === "2") return "login";
+        const normalized = answer.replace(/[\s_-]+/g, "");
+        if (normalized === "api" || normalized === "apikey" || normalized === "key") {
+            return "api";
+        }
+        if (normalized === "login" || normalized === "account" || normalized === "accountlogin") {
+            return "login";
+        }
+    }
+}
+
 export async function askProfileName(
     rl: readline.Interface,
     config: Config,

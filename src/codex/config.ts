@@ -6,7 +6,7 @@ import * as os from "os";
 import * as path from "path";
 import type { Config, EnvValue } from "../types";
 import { CODEX_AUTH_PATH } from "../constants";
-import { getProfileDisplayName, inferProfileType } from "../profile/type";
+import { getProfileDisplayName, inferProfileType, isLoginProfile } from "../profile/type";
 import { expandEnv, resolvePath } from "../shell/utils";
 
 const DEFAULT_CODEX_CONFIG_PATH = path.join(os.homedir(), ".codex", "config.toml");
@@ -345,8 +345,12 @@ function writeManagedAuth(apiKey: string | null): void {
     if (auth) {
         if (apiKey === null) {
             delete auth.OPENAI_API_KEY;
+            if (auth.auth_mode === "apikey") delete auth.auth_mode;
         } else {
             auth.OPENAI_API_KEY = apiKey;
+            // Codex prefers ChatGPT tokens when both are present unless
+            // auth_mode says otherwise.
+            if (auth.tokens) auth.auth_mode = "apikey";
         }
         writeText(CODEX_AUTH_PATH, `${JSON.stringify(auth, null, 2)}\n`);
         return;
@@ -385,6 +389,10 @@ export function syncCodexProfile(config: Config, profileName: string): void {
     const profile = config.profiles && config.profiles[profileName];
     if (!profile) {
         throw new Error(`Unknown profile: ${profileName}`);
+    }
+    if (isLoginProfile(profile)) {
+        clearManagedCodexProfile(config);
+        return;
     }
     const env = profile.env || {};
     const baseUrl = normalizeEnvValue(env.OPENAI_BASE_URL);

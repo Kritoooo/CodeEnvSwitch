@@ -4,6 +4,15 @@
 import type { Config, AddArgs } from "../types";
 import { findProfileKeysByName } from "../profile/match";
 import { generateProfileKey } from "../profile/resolve";
+import { inferProfileType } from "../profile/type";
+
+const API_CREDENTIAL_KEYS = new Set([
+    "OPENAI_BASE_URL",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+]);
 
 export function addConfig(config: Config, addArgs: AddArgs): Config {
     if (!config.profiles || typeof config.profiles !== "object") {
@@ -59,7 +68,28 @@ export function addConfig(config: Config, addArgs: AddArgs): Config {
         if (idx <= 0) throw new Error(`Invalid KEY=VALUE: ${pair}`);
         const key = pair.slice(0, idx);
         const value = pair.slice(idx + 1);
+        if (addArgs.login && API_CREDENTIAL_KEYS.has(key.toUpperCase())) {
+            throw new Error(
+                `Login profiles use the account login stored by codex/claude; drop ${key} or omit --login.`
+            );
+        }
         profile.env[key] = value;
+    }
+
+    if (addArgs.login) {
+        profile.authMode = "login";
+        for (const key of Object.keys(profile.env)) {
+            if (API_CREDENTIAL_KEYS.has(key.toUpperCase())) {
+                delete profile.env[key];
+            }
+        }
+        const resolvedType = inferProfileType(targetKey, profile, addArgs.type);
+        if (!resolvedType) {
+            throw new Error(
+                "Login profiles need a type. Use: codenv add --login --type <codex|claude> <name>."
+            );
+        }
+        if (!profile.type) profile.type = resolvedType;
     }
 
     if (addArgs.note !== null && addArgs.note !== undefined) {

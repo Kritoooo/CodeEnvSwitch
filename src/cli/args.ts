@@ -72,6 +72,7 @@ export function parseAddArgs(args: string[]): AddArgs {
         commands: [],
         unset: [],
         type: null,
+        login: false,
     };
 
     for (let i = 0; i < args.length; i++) {
@@ -100,6 +101,10 @@ export function parseAddArgs(args: string[]): AddArgs {
         }
         if (arg.startsWith("--type=")) {
             result.type = arg.slice("--type=".length) as ProfileType;
+            continue;
+        }
+        if (arg === "-l" || arg === "--login") {
+            result.login = true;
             continue;
         }
         if (arg === "-r" || arg === "--remove-file") {

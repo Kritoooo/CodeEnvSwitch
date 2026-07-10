@@ -8,9 +8,12 @@ export type ProfileType = "codex" | "claude";
 
 export type DefaultProfiles = Partial<Record<ProfileType, string>>;
 
+export type ProfileAuthMode = "api" | "login";
+
 export interface Profile {
     name?: string;
     type?: string;
+    authMode?: ProfileAuthMode;
     note?: string;
     env?: Record<string, EnvValue>;
     removeFiles?: string[];
@@ -96,6 +99,7 @@ export interface AddArgs {
     commands: string[];
     unset: string[];
     type: ProfileType | null;
+    login: boolean;
 }
 
 export interface UsageResetArgs {

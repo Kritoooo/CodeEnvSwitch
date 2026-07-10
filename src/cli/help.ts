@@ -40,6 +40,8 @@ Init options:
 
 Add options:
   -t, --type <codex|claude>   Set profile type (alias: cc)
+  -l, --login                 Use the account login stored by codex/claude
+                              instead of an API key (requires --type)
   -n, --note <text>           Set profile note
   -r, --remove-file <path>    Add a removeFiles entry (repeat)
   -x, --command <cmd>         Add a commands entry (repeat)
@@ -74,6 +76,7 @@ Examples:
   codenv usage-reset --yes
   CODE_ENV_CONFIG=~/.config/code-env/config.json codenv use claude default
   codenv add --type codex primary OPENAI_BASE_URL=https://api.example.com/v1 OPENAI_API_KEY=YOUR_API_KEY
+  codenv add --login --type claude personal
   codenv add
 `;
     console.log(msg);

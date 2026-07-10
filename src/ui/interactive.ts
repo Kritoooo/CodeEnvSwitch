@@ -7,7 +7,15 @@ import { readConfigIfExists, writeConfig, getResolvedDefaultProfileKeys } from "
 import { generateProfileKey } from "../profile/resolve";
 import { normalizeType, inferProfileType } from "../profile/type";
 import { buildListRows } from "../profile/display";
-import { createReadline, askRequired, askType, askProfileName } from "./readline";
+import { createReadline, askRequired, askType, askAuthMode, askProfileName } from "./readline";
+
+const API_CREDENTIAL_KEYS = [
+    "OPENAI_BASE_URL",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+];
 
 export async function runInteractiveAdd(configPath: string): Promise<void> {
     const config = readConfigIfExists(configPath);
@@ -17,8 +25,13 @@ export async function runInteractiveAdd(configPath: string): Promise<void> {
         const defaultName = "default";
         const profileInfo = await askProfileName(rl, config, defaultName, type);
         const profileKey = profileInfo.key || generateProfileKey(config);
-        const baseUrl = await askRequired(rl, "Base URL (required): ");
-        const apiKey = await askRequired(rl, "API key (required): ");
+        const authMode = await askAuthMode(rl);
+        let baseUrl = "";
+        let apiKey = "";
+        if (authMode === "api") {
+            baseUrl = await askRequired(rl, "Base URL (required): ");
+            apiKey = await askRequired(rl, "API key (required): ");
+        }
 
         if (!config.profiles || typeof config.profiles !== "object") {
             config.profiles = {};
@@ -33,15 +46,28 @@ export async function runInteractiveAdd(configPath: string): Promise<void> {
             profile.env = {};
         }
 
-        if (type === "codex") {
-            profile.env.OPENAI_BASE_URL = baseUrl;
-            profile.env.OPENAI_API_KEY = apiKey;
-        } else {
-            profile.env.ANTHROPIC_BASE_URL = baseUrl;
-            profile.env.ANTHROPIC_API_KEY = apiKey;
+        if (authMode === "login") {
+            profile.authMode = "login";
+            for (const key of API_CREDENTIAL_KEYS) {
+                delete profile.env[key];
+            }
+            const loginCmd = type === "codex" ? "codex login" : "claude /login";
             console.log(
-                "Note: ANTHROPIC_AUTH_TOKEN will be set to the same value when applying."
+                `Note: this profile reuses the account login stored by ${type}. ` +
+                `If you are not logged in yet, run \`${loginCmd}\` once.`
             );
+        } else {
+            delete profile.authMode;
+            if (type === "codex") {
+                profile.env.OPENAI_BASE_URL = baseUrl;
+                profile.env.OPENAI_API_KEY = apiKey;
+            } else {
+                profile.env.ANTHROPIC_BASE_URL = baseUrl;
+                profile.env.ANTHROPIC_API_KEY = apiKey;
+                console.log(
+                    "Note: ANTHROPIC_AUTH_TOKEN will be set to the same value when applying."
+                );
+            }
         }
 
         writeConfig(configPath, config);

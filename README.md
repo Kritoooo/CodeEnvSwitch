@@ -115,6 +115,37 @@ Interactive add (default):
 codenv add
 ```
 
+### Login profiles (account login instead of API key)
+
+If you sometimes use the official account login (`codex login` / Claude Code
+OAuth) and sometimes an API relay, add a login profile so you can switch
+between them without re-authenticating:
+
+```bash
+codenv add --login --type codex chatgpt
+codenv add --login --type claude personal
+# then switch as usual
+codenv use codex chatgpt   # back to your ChatGPT login
+codenv use codex primary   # back to the API profile
+```
+
+Login profiles carry no credentials. Applying one unsets the API environment
+variables (`OPENAI_*` / `ANTHROPIC_*`) so the CLI falls back to the login
+stored on disk (`~/.codex/auth.json` for Codex, `~/.claude/.credentials.json`
+for Claude Code). For Codex, the first switch to an API profile backs up your
+logged-in `auth.json` and switching to a login profile restores it, so a
+single browser login survives any number of profile switches. You only need
+to log in once per tool (run `codex login` / `claude /login` if you never
+have).
+
+Note: on macOS Claude Code stores OAuth credentials in the Keychain rather
+than `.credentials.json`; login profiles still work there because switching
+only touches environment variables.
+
+Interactive `codenv add` asks `Select auth (1=API key, 2=account login)` and
+skips the Base URL / API key prompts for login profiles. `codenv list` marks
+these profiles with `login` in the `NOTE` column.
+
 ### Remove a profile
 
 ```bash

@@ -3,7 +3,7 @@
  */
 import type { Config, Profile, ProfileType, ListRow, EnvValue } from "../types";
 import { DEFAULT_PROFILE_TYPES } from "../constants";
-import { normalizeType, inferProfileType, getProfileDisplayName } from "./type";
+import { normalizeType, inferProfileType, isLoginProfile, getProfileDisplayName } from "./type";
 
 export function isEnvValueUnset(value: EnvValue): boolean {
     return value === null || value === undefined || value === "";
@@ -16,6 +16,7 @@ export function buildEffectiveEnv(
     const env = profile && profile.env ? profile.env : {};
     if (!activeType) return env;
     if (activeType !== "claude") return env;
+    if (isLoginProfile(profile)) return env;
     const apiKey = env.ANTHROPIC_API_KEY;
     const authToken = env.ANTHROPIC_AUTH_TOKEN;
     if (isEnvValueUnset(apiKey) || !isEnvValueUnset(authToken)) return env;
@@ -75,6 +76,7 @@ export function buildListRows(
         const defaultLabel = defaultTypes.length > 0 ? "default" : "";
         const noteParts: string[] = [];
         if (defaultLabel) noteParts.push(defaultLabel);
+        if (isLoginProfile(safeProfile)) noteParts.push("login");
         if (note) noteParts.push(note);
         const noteText = noteParts.join(" | ");
         const active =

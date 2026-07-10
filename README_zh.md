@@ -115,6 +115,34 @@ profiles 使用内部 key，展示名称存放在 `profile.name`。
 codenv add
 ```
 
+### 登录 profile（使用账号登录而非 API key）
+
+如果你有时用官方账号登录（`codex login` / Claude Code OAuth），有时用 API
+中转，可以添加一个登录 profile，在两者之间切换而无需重新登录：
+
+```bash
+codenv add --login --type codex chatgpt
+codenv add --login --type claude personal
+# 之后照常切换
+codenv use codex chatgpt   # 切回 ChatGPT 登录态
+codenv use codex primary   # 切回 API profile
+```
+
+登录 profile 本身不保存任何凭证。应用它时会清掉 API 相关环境变量
+（`OPENAI_*` / `ANTHROPIC_*`），CLI 会自动回落到磁盘上已保存的登录态
+（Codex 为 `~/.codex/auth.json`，Claude Code 为
+`~/.claude/.credentials.json`）。对于 Codex，第一次切到 API profile 时
+会备份已登录的 `auth.json`，切回登录 profile 时自动恢复，因此浏览器登录
+一次即可，之后任意切换都不需要重新登录（如果从未登录过，先运行一次
+`codex login` / `claude /login`）。
+
+注意：macOS 上 Claude Code 的 OAuth 凭证保存在 Keychain 而不是
+`.credentials.json`，登录 profile 依然可用，因为切换只涉及环境变量。
+
+交互式 `codenv add` 会询问 `Select auth (1=API key, 2=account login)`，
+选择登录模式时会跳过 Base URL / API key。`codenv list` 会在 `NOTE` 列
+用 `login` 标记这类 profile。
+
 ### 删除 profile
 
 ```bash
