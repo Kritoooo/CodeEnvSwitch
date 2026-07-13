@@ -5,10 +5,11 @@ import type { Config } from "../types";
 import { buildListRows } from "../profile/display";
 import { getResolvedDefaultProfileKeys } from "../config/defaults";
 import {
+    buildUsageCostIndex,
+    buildUsageTotals,
     formatTokenCount,
     getUsagePath,
-    readUsageCostIndex,
-    readUsageTotalsIndex,
+    readUsageRecords,
     resolveUsageCostForProfile,
     resolveUsageTotalsForProfile,
     syncUsageFromSessions,
@@ -21,8 +22,8 @@ export function printList(config: Config, configPath: string | null): void {
         console.log("(no profiles found)");
         return;
     }
+    const usagePath = getUsagePath(config, configPath);
     try {
-        const usagePath = getUsagePath(config, configPath);
         if (usagePath) {
             syncUsageFromSessions(config, configPath, usagePath);
         }
@@ -30,8 +31,10 @@ export function printList(config: Config, configPath: string | null): void {
         // ignore usage sync errors
     }
     try {
-        const usageTotals = readUsageTotalsIndex(config, configPath, false);
-        const usageCosts = readUsageCostIndex(config, configPath, false);
+        const records = usagePath ? readUsageRecords(usagePath) : [];
+        const usageTotals = records.length > 0 ? buildUsageTotals(records) : null;
+        const usageCosts =
+            records.length > 0 ? buildUsageCostIndex(records, config) : null;
         if (usageTotals) {
             for (const row of rows) {
                 if (!row.usageType) continue;

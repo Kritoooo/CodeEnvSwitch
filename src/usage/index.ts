@@ -78,6 +78,7 @@ interface UsageStateEntry {
     endTs: string | null;
     cwd: string | null;
     model?: string | null;
+    unresolved?: boolean;
 }
 
 interface UsageSessionEntry {
@@ -106,6 +107,8 @@ interface UsageStateFile {
     sessions?: Record<string, UsageSessionEntry>;
     usageMtimeMs?: number;
     usageSize?: number;
+    profileLogMtimeMs?: number;
+    profileLogSize?: number;
 }
 
 interface ProfileLogEntry {
@@ -335,7 +338,7 @@ export function buildUsageTotals(records: UsageRecord[]): UsageTotalsIndex {
     return { byKey, byName };
 }
 
-function buildUsageCostIndex(records: UsageRecord[], config: Config): UsageCostIndex {
+export function buildUsageCostIndex(records: UsageRecord[], config: Config): UsageCostIndex {
     const byKey = new Map<string, UsageCostTotals>();
     const byName = new Map<string, UsageCostTotals>();
     const { startMs, endMs } = getTodayWindow();
@@ -921,12 +924,20 @@ function readUsageState(statePath: string): UsageStateFile {
             parsed.sessions && typeof parsed.sessions === "object" ? parsed.sessions : {};
         const usageMtimeMs = Number(parsed.usageMtimeMs);
         const usageSize = Number(parsed.usageSize);
+        const profileLogMtimeMs = Number(parsed.profileLogMtimeMs);
+        const profileLogSize = Number(parsed.profileLogSize);
         return {
             version: 1,
             files,
             sessions,
             usageMtimeMs: Number.isFinite(usageMtimeMs) ? usageMtimeMs : undefined,
             usageSize: Number.isFinite(usageSize) ? usageSize : undefined,
+            profileLogMtimeMs: Number.isFinite(profileLogMtimeMs)
+                ? profileLogMtimeMs
+                : undefined,
+            profileLogSize: Number.isFinite(profileLogSize)
+                ? profileLogSize
+                : undefined,
         };
     } catch {
         return { version: 1, files: {}, sessions: {} };
@@ -1637,10 +1648,15 @@ export function syncUsageFromSessions(
     try {
         const profileLogPath = getProfileLogPath(config, configPath);
         const logEntries = readProfileLogEntries([profileLogPath]);
+        const logStat = readUsageFileStat(profileLogPath);
 
         const state = readUsageState(statePath);
+        const profileLogChanged =
+            (logStat ? logStat.mtimeMs : undefined) !== state.profileLogMtimeMs ||
+            (logStat ? logStat.size : undefined) !== state.profileLogSize;
         const files = state.files || {};
         let sessions = state.sessions || {};
+        let dirty = false;
         const usageStat = readUsageFileStat(usagePath);
         const hasUsageData = !!usageStat && usageStat.isFile() && usageStat.size > 0;
         const sessionsEmpty = Object.keys(sessions).length === 0;
@@ -1656,6 +1672,7 @@ export function syncUsageFromSessions(
             const records = readUsageRecords(usagePath);
             if (records.length > 0) {
                 sessions = buildUsageSessionsFromRecords(records);
+                dirty = true;
             }
         }
         state.sessions = sessions;
@@ -1672,7 +1689,9 @@ export function syncUsageFromSessions(
             if (!stat || !stat.isFile()) return;
             const prev = files[filePath];
             if (prev && prev.mtimeMs === stat.mtimeMs && prev.size === stat.size) {
-                return;
+                // Unresolved files are retried only when the profile log gains
+                // new entries that might now bind them to a profile.
+                if (!prev.unresolved || !profileLogChanged) return;
             }
             let stats: SessionStats;
             try {
@@ -1702,7 +1721,28 @@ export function syncUsageFromSessions(
                       filePath,
                       stats.sessionId
                   );
-            if (!resolved.match) return;
+            if (!resolved.match) {
+                // Cache the stat so this file is not re-parsed on every sync.
+                // Token fields stay at zero so that a later resolution (via new
+                // profile log entries) still records the full session usage.
+                files[filePath] = {
+                    mtimeMs: stat.mtimeMs,
+                    size: stat.size,
+                    type,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    totalTokens: 0,
+                    startTs: stats.startTs,
+                    endTs: stats.endTs,
+                    cwd: stats.cwd,
+                    model: stats.model,
+                    unresolved: true,
+                };
+                dirty = true;
+                return;
+            }
             const resolvedModel =
                 (sessionPrev && sessionPrev.model) ||
                 stats.model ||
@@ -1830,15 +1870,29 @@ export function syncUsageFromSessions(
                 cwd: stats.cwd,
                 model: resolvedModel,
             };
+            dirty = true;
         };
 
         for (const filePath of codexFiles) processFile(filePath, "codex");
         for (const filePath of claudeFiles) processFile(filePath, "claude");
 
+        if (profileLogChanged) dirty = true;
+        state.profileLogMtimeMs = logStat ? logStat.mtimeMs : undefined;
+        state.profileLogSize = logStat ? logStat.size : undefined;
         state.files = files;
         state.sessions = sessions;
+        const prevUsageMtimeMs = state.usageMtimeMs;
+        const prevUsageSize = state.usageSize;
         updateUsageStateMetadata(state, usagePath);
-        writeUsageState(statePath, state);
+        if (
+            state.usageMtimeMs !== prevUsageMtimeMs ||
+            state.usageSize !== prevUsageSize
+        ) {
+            dirty = true;
+        }
+        if (dirty) {
+            writeUsageState(statePath, state);
+        }
     } finally {
         releaseLock(lockPath, lockFd);
     }
