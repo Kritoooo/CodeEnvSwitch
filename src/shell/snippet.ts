@@ -76,7 +76,9 @@ export function upsertShellSnippet(rcPath: string, snippet: string): void {
         const re = new RegExp(
             `${escapeRegExp(markerStart)}[\\s\\S]*?${escapeRegExp(markerEnd)}`
         );
-        updated = existing.replace(re, block);
+        // A replacer function keeps `$$` in the snippet literal; as a string it
+        // would be read as an escaped `$` and eat the shell's PID variable.
+        updated = existing.replace(re, () => block);
     } else if (existing.trim().length === 0) {
         updated = `${block}\n`;
     } else {
