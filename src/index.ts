@@ -12,6 +12,9 @@ import {
     parseAddArgs,
     parseUsageResetArgs,
     parseStatuslineArgs,
+    parseAdoptArgs,
+    parseLoginArgs,
+    parseMigrateArgs,
     printHelp,
 } from "./cli";
 import { detectShell, getShellRcPath, getShellSnippet, upsertShellSnippet } from "./shell";
@@ -33,16 +36,22 @@ import {
     printUse,
     printUnset,
     runLaunch,
+    runLogin,
     printStatusline,
     runUsageReset,
 } from "./commands";
 import { logProfileUse } from "./usage";
 import { createReadline, askConfirm, runInteractiveAdd, runInteractiveUse } from "./ui";
+import { applyCodexConfigToml } from "./codex/config";
 import {
-    clearManagedCodexProfile,
-    resolveCodexProfileFromEnv,
-    syncCodexProfile,
-} from "./codex/config";
+    applyProfileAccount,
+    runAdopt,
+    buildMigrateTypePlan,
+    printMigratePlan,
+    executeMigrateTypePlan,
+    writeSafetyCopy,
+    getMigrateTypes,
+} from "./accounts";
 
 function getErrorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -64,27 +73,26 @@ async function main() {
 
     const cmd = args[0];
     try {
-        if (cmd === "__codex-sync") {
+        if (cmd === "__account-apply") {
+            const type = normalizeType(args[1]);
+            const profileKey = args[2];
+            if (!type || !profileKey) return;
             const configPath =
                 process.env.CODE_ENV_CONFIG_PATH || findConfigPath(parsed.configPath);
             const config = readConfigIfExists(configPath);
-            const profileKey = process.env.CODE_ENV_PROFILE_KEY_CODEX || null;
-            const profileName = process.env.CODE_ENV_PROFILE_NAME_CODEX || null;
-            const resolvedProfile = resolveCodexProfileFromEnv(
-                config,
-                profileKey,
-                profileName
-            );
-            if (!resolvedProfile) return;
-            syncCodexProfile(config, resolvedProfile);
+            if (!config.profiles || !config.profiles[profileKey]) return;
+            const report = applyProfileAccount(config, configPath, profileKey, type);
+            for (const warning of report.warnings) {
+                console.error(`codenv: ${warning}`);
+            }
             return;
         }
 
-        if (cmd === "__codex-clear") {
+        if (cmd === "__account-reset") {
             const configPath =
                 process.env.CODE_ENV_CONFIG_PATH || findConfigPath(parsed.configPath);
             const config = readConfigIfExists(configPath);
-            clearManagedCodexProfile(config);
+            applyCodexConfigToml(config, { authMode: "login" });
             return;
         }
 
@@ -308,7 +316,7 @@ async function main() {
                             changedDefaults = true;
                         }
                     }
-                } catch (err) {
+                } catch {
                     // keep defaults that cannot be resolved
                 }
             }
@@ -331,6 +339,68 @@ async function main() {
                 return;
             }
             console.log(cfgPath);
+            return;
+        }
+
+        if (cmd === "adopt") {
+            const adoptArgs = parseAdoptArgs(args.slice(1));
+            const changed = runAdopt(config, configPath, adoptArgs);
+            if (changed) {
+                writeConfig(configPath!, config);
+                console.log(`Updated config: ${configPath}`);
+            }
+            return;
+        }
+
+        if (cmd === "login") {
+            const loginArgs = parseLoginArgs(args.slice(1));
+            const exitCode = await runLogin(config, configPath, loginArgs);
+            process.exit(exitCode);
+        }
+
+        if (cmd === "migrate") {
+            const migrateArgs = parseMigrateArgs(args.slice(1));
+            const plans = getMigrateTypes(migrateArgs).map((type) =>
+                buildMigrateTypePlan(
+                    config,
+                    configPath,
+                    type,
+                    migrateArgs.loginNames[type]
+                )
+            );
+            console.log("codenv migrate plan:");
+            for (const plan of plans) printMigratePlan(plan);
+            if (plans.every((plan) => plan.skip)) {
+                console.log("\nNothing to migrate.");
+                return;
+            }
+            if (migrateArgs.dryRun) {
+                console.log("\n(dry run; nothing changed)");
+                return;
+            }
+            if (!migrateArgs.yes) {
+                const rl = createReadline();
+                try {
+                    const confirmed = await askConfirm(
+                        rl,
+                        "\nApply this migration? (y/N): "
+                    );
+                    if (!confirmed) return;
+                } finally {
+                    rl.close();
+                }
+            }
+            const safetyDir = writeSafetyCopy(config, configPath, plans);
+            if (safetyDir) console.log(`Safety copy: ${safetyDir}`);
+            let changed = false;
+            for (const plan of plans) {
+                if (executeMigrateTypePlan(config, configPath, plan)) changed = true;
+            }
+            if (changed) {
+                writeConfig(configPath!, config);
+                console.log(`Updated config: ${configPath}`);
+            }
+            console.log("Migration complete.");
             return;
         }
 

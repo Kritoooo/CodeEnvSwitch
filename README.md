@@ -115,36 +115,71 @@ Interactive add (default):
 codenv add
 ```
 
-### Login profiles (account login instead of API key)
+### Login profiles and multiple accounts
 
-If you sometimes use the official account login (`codex login` / Claude Code
-OAuth) and sometimes an API relay, add a login profile so you can switch
-between them without re-authenticating:
+Every profile owns its own credentials. They live under the config directory:
 
-```bash
-codenv add --login --type codex chatgpt
-codenv add --login --type claude personal
-# then switch as usual
-codenv use codex chatgpt   # back to your ChatGPT login
-codenv use codex primary   # back to the API profile
+```
+~/.config/code-env/accounts/<type>/<profileKey>/
 ```
 
-Login profiles carry no credentials. Applying one unsets the API environment
-variables (`OPENAI_*` / `ANTHROPIC_*`) so the CLI falls back to the login
-stored on disk (`~/.codex/auth.json` for Codex, `~/.claude/.credentials.json`
-for Claude Code). For Codex, the first switch to an API profile backs up your
-logged-in `auth.json` and switching to a login profile restores it, so a
-single browser login survives any number of profile switches. You only need
-to log in once per tool (run `codex login` / `claude /login` if you never
-have).
+The tool's own credential path (`~/.codex/auth.json`,
+`~/.claude/.credentials.json`) becomes a symlink into the active profile's
+directory, so a token refresh written by codex or Claude Code lands in that
+profile's file and nothing is ever copied over another account's credentials.
 
-Note: on macOS Claude Code stores OAuth credentials in the Keychain rather
-than `.credentials.json`; login profiles still work there because switching
-only touches environment variables.
+```bash
+codenv add --login --type codex work
+codenv login codex work          # runs `codex login` for this profile
+codenv add --login --type codex personal
+codenv login codex personal      # a second, independent account
+codenv use codex work            # switch between them freely
+```
+
+API profiles are isolated the same way: their credential file is derived from
+the profile's configured key, so an API profile never sees an account login and
+a login profile never sees an API key. This is the difference from earlier
+versions, where both lived in the same `auth.json` and switching restored a
+snapshot that could roll a refreshed token back.
+
+`codenv list` shows which account each login profile currently holds, or
+`not signed in` when its vault is still empty.
+
+### Migrating from 0.1.x
+
+Run this once. It moves the credential already on disk into the profile it
+belongs to and removes the old provider backup file:
+
+```bash
+codenv migrate --dry-run   # print the plan, change nothing
+codenv migrate
+```
+
+Attribution is automatic when a type has exactly one login profile, which is
+all 0.1.x could represent on disk. With several, name the owner:
+
+```bash
+codenv migrate codex --login work
+```
+
+The other login profiles were aliases for that same account, so they start
+empty — run `codenv login <type> <name>` for each to turn it into a real,
+separate account. A copy of everything the migration overwrites is kept under
+`accounts/migrate-backup-<timestamp>/` and is never deleted automatically.
+
+Until you migrate, `codenv use` refuses to touch an existing credential file
+rather than risk destroying a login. To capture it into a specific profile
+yourself, use `codenv adopt <type> <name>`.
+
+Note: if a tool writes its credential file by replacing it (tmp + rename)
+instead of writing through the symlink, codenv detects that on the next
+switch, files the orphaned credential back under the profile it belonged to,
+and falls back to copying the file in and out. Nothing is lost; only the
+live-refresh behaviour changes. macOS Claude Code stores OAuth credentials in
+the Keychain rather than `.credentials.json`, where this layout does not apply.
 
 Interactive `codenv add` asks `Select auth (1=API key, 2=account login)` and
-skips the Base URL / API key prompts for login profiles. `codenv list` marks
-these profiles with `login` in the `NOTE` column.
+skips the Base URL / API key prompts for login profiles.
 
 ### Remove a profile
 

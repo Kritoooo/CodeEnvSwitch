@@ -1023,7 +1023,7 @@ function writeUsageSessionState(filePath: string, session: UsageSessionEntry): v
 function addSiblingBackupPaths(targets: Set<string>, filePath: string | null) {
     if (!filePath) return;
     const dir = path.dirname(filePath);
-    let entries: fs.Dirent[] = [];
+    let entries: fs.Dirent[];
     try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -1113,7 +1113,7 @@ function collectSessionFiles(root: string | null): string[] {
     while (stack.length > 0) {
         const current = stack.pop();
         if (!current) continue;
-        let entries: fs.Dirent[] = [];
+        let entries: fs.Dirent[];
         try {
             entries = fs.readdirSync(current, { withFileTypes: true });
         } catch {
@@ -1680,7 +1680,7 @@ export function syncUsageFromSessions(
         const claudeFiles = collectSessionFiles(getClaudeSessionsPath(config));
 
         const processFile = (filePath: string, type: ProfileType) => {
-            let stat: fs.Stats | null = null;
+            let stat: fs.Stats;
             try {
                 stat = fs.statSync(filePath);
             } catch {

@@ -44,7 +44,7 @@ export function readConfig(configPath: string): Config {
     const raw = fs.readFileSync(configPath, "utf8");
     try {
         return JSON.parse(raw);
-    } catch (err) {
+    } catch {
         throw new Error(`Invalid JSON in config: ${configPath}`);
     }
 }

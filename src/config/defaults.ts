@@ -65,7 +65,7 @@ export function getResolvedDefaultProfileKeys(config: Config): DefaultProfiles {
         try {
             const profileName = resolveDefaultProfileForType(config, type, value);
             if (profileName) resolved[type] = profileName;
-        } catch (err) {
+        } catch {
             // ignore invalid defaults for list output
         }
     }

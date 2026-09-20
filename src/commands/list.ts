@@ -3,6 +3,8 @@
  */
 import type { Config } from "../types";
 import { buildListRows } from "../profile/display";
+import { isLoginProfile } from "../profile/type";
+import { describeCredential, readVaultCredential } from "../accounts";
 import { getResolvedDefaultProfileKeys } from "../config/defaults";
 import {
     buildUsageCostIndex,
@@ -22,6 +24,19 @@ export function printList(config: Config, configPath: string | null): void {
         console.log("(no profiles found)");
         return;
     }
+    // Login profiles look alike by name, so show which account each one holds.
+    for (const row of rows) {
+        if (!row.usageType) continue;
+        const profile = (config.profiles || {})[row.key];
+        if (!isLoginProfile(profile)) continue;
+        const label = describeCredential(
+            row.usageType,
+            readVaultCredential(configPath, row.usageType, row.key)
+        );
+        const suffix = label || "not signed in";
+        row.note = row.note ? `${row.note} | ${suffix}` : suffix;
+    }
+
     const usagePath = getUsagePath(config, configPath);
     try {
         if (usagePath) {

@@ -241,7 +241,7 @@ export function buildStatuslineResult(
     }
     const sessionUsage = hasExplicitUsage ? usage : stdinUsage;
     const pricing = resolvePricingForProfile(config, profile || null, model);
-    let sessionCost: number | null = null;
+    let sessionCost: number | null;
     if (hasExplicitUsage) {
         sessionCost = sessionUsage
             ? calculateUsageCost(sessionUsage, pricing)

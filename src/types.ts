@@ -35,6 +35,7 @@ export interface ClaudeStatuslineConfig {
 
 export interface Config {
     unset?: string[];
+    codexBaseModelProvider?: string;
     profiles?: Record<string, Profile>;
     defaultProfiles?: DefaultProfiles;
     usagePath?: string;
@@ -104,6 +105,23 @@ export interface AddArgs {
 
 export interface UsageResetArgs {
     yes: boolean;
+}
+
+export interface AdoptArgs {
+    type: ProfileType | null;
+    name: string | null;
+}
+
+export interface LoginArgs {
+    type: ProfileType | null;
+    name: string | null;
+}
+
+export interface MigrateArgs {
+    types: ProfileType[];
+    dryRun: boolean;
+    yes: boolean;
+    loginNames: Partial<Record<ProfileType, string>>;
 }
 
 export type StatuslineFormat = "text" | "json";

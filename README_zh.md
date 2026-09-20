@@ -115,33 +115,63 @@ profiles 使用内部 key，展示名称存放在 `profile.name`。
 codenv add
 ```
 
-### 登录 profile（使用账号登录而非 API key）
+### 登录 profile 与多账号
 
-如果你有时用官方账号登录（`codex login` / Claude Code OAuth），有时用 API
-中转，可以添加一个登录 profile，在两者之间切换而无需重新登录：
+每个 profile 拥有自己的凭据，存放在配置目录下：
 
-```bash
-codenv add --login --type codex chatgpt
-codenv add --login --type claude personal
-# 之后照常切换
-codenv use codex chatgpt   # 切回 ChatGPT 登录态
-codenv use codex primary   # 切回 API profile
+```
+~/.config/code-env/accounts/<type>/<profileKey>/
 ```
 
-登录 profile 本身不保存任何凭证。应用它时会清掉 API 相关环境变量
-（`OPENAI_*` / `ANTHROPIC_*`），CLI 会自动回落到磁盘上已保存的登录态
-（Codex 为 `~/.codex/auth.json`，Claude Code 为
-`~/.claude/.credentials.json`）。对于 Codex，第一次切到 API profile 时
-会备份已登录的 `auth.json`，切回登录 profile 时自动恢复，因此浏览器登录
-一次即可，之后任意切换都不需要重新登录（如果从未登录过，先运行一次
-`codex login` / `claude /login`）。
+工具自身的凭据路径（`~/.codex/auth.json`、`~/.claude/.credentials.json`）会变成
+指向当前 profile 目录的符号链接。codex 或 Claude Code 刷新 token 时直接写入该
+profile 自己的文件，任何时候都不会把一个账号的凭据覆盖到另一个账号上。
 
-注意：macOS 上 Claude Code 的 OAuth 凭证保存在 Keychain 而不是
-`.credentials.json`，登录 profile 依然可用，因为切换只涉及环境变量。
+```bash
+codenv add --login --type codex work
+codenv login codex work          # 为该 profile 执行 `codex login`
+codenv add --login --type codex personal
+codenv login codex personal      # 第二个彼此独立的账号
+codenv use codex work            # 随意切换
+```
 
-交互式 `codenv add` 会询问 `Select auth (1=API key, 2=account login)`，
-选择登录模式时会跳过 Base URL / API key。`codenv list` 会在 `NOTE` 列
-用 `login` 标记这类 profile。
+API profile 同样被隔离：它的凭据文件由 profile 配置的 key 派生而来，因此 API
+profile 看不到账号登录，登录 profile 也看不到 API key。这是与旧版本的关键区别
+——旧版两者共存于同一个 `auth.json`，切换依赖快照还原，可能把刷新过的 token 回滚掉。
+
+`codenv list` 会显示每个登录 profile 当前持有的账号；尚未登录时显示
+`not signed in`。
+
+### 从 0.1.x 迁移
+
+只需执行一次。它把磁盘上已有的凭据归入对应的 profile，并删除旧的 provider 备份文件：
+
+```bash
+codenv migrate --dry-run   # 只打印计划，不改动任何文件
+codenv migrate
+```
+
+当某个 type 恰好只有一个登录 profile 时归属是自动的——这也是 0.1.x 在磁盘上
+唯一能表示的情况。如果有多个，需要指明归属：
+
+```bash
+codenv migrate codex --login work
+```
+
+其余登录 profile 原本只是同一账号的别名，迁移后是空的——对每一个执行
+`codenv login <type> <name>` 才会变成真正独立的账号。迁移会把所有将被覆盖的内容
+复制到 `accounts/migrate-backup-<时间戳>/`，且不会自动删除。
+
+迁移之前，`codenv use` 会拒绝改动已存在的凭据文件，以免破坏你的登录。若想自行
+指定归属，使用 `codenv adopt <type> <name>`。
+
+说明：如果某个工具改用「写临时文件再 rename」的方式替换凭据文件（而不是写穿符号
+链接），codenv 会在下一次切换时检测到，把这份孤立的凭据归档回它所属的 profile，
+并退回到切换时复制文件的模式。数据不会丢失，只是失去实时写回的特性。macOS 上
+Claude Code 把 OAuth 凭据存在钥匙串而非 `.credentials.json`，该布局在那里不适用。
+
+交互式 `codenv add` 会询问 `Select auth (1=API key, 2=account login)`，登录
+profile 会跳过 Base URL / API key 的提问。
 
 ### 删除 profile
 

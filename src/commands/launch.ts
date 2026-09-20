@@ -15,7 +15,8 @@ import {
 } from "../usage";
 import { ensureClaudeStatusline } from "../statusline/claude";
 import { ensureCodexStatuslineConfig } from "../statusline/codex";
-import { resolveCodexProfileFromEnv, syncCodexProfile } from "../codex/config";
+import { resolveProfileFromEnv } from "../profile/resolve";
+import { applyProfileAccount } from "../accounts";
 
 const SESSION_BINDING_POLL_MS = 1000;
 const SESSION_BINDING_START_GRACE_MS = 5000;
@@ -39,7 +40,7 @@ function collectSessionFiles(root: string | null): string[] {
     while (stack.length > 0) {
         const current = stack.pop();
         if (!current) continue;
-        let entries: fs.Dirent[] = [];
+        let entries: fs.Dirent[];
         try {
             entries = fs.readdirSync(current, { withFileTypes: true });
         } catch {
@@ -162,7 +163,7 @@ function findLatestUnboundSessionMeta(
     for (const filePath of files) {
         if (bound.byFile.has(filePath)) continue;
         if (skipFiles && skipFiles.has(filePath)) continue;
-        let stat: fs.Stats | null = null;
+        let stat: fs.Stats;
         try {
             stat = fs.statSync(filePath);
         } catch {
@@ -242,14 +243,11 @@ export async function runLaunch(
         throw new Error(`Unknown launch target: ${target}`);
     }
     const { key: profileKey, name: profileName } = getProfileEnv(type);
-    if (type === "codex") {
-        const codexProfileKey = resolveCodexProfileFromEnv(
-            config,
-            profileKey,
-            profileName
-        );
-        if (codexProfileKey) {
-            syncCodexProfile(config, codexProfileKey);
+    const resolvedProfileKey = resolveProfileFromEnv(config, type, profileKey, profileName);
+    if (resolvedProfileKey) {
+        const report = applyProfileAccount(config, configPath, resolvedProfileKey, type);
+        for (const warning of report.warnings) {
+            console.error(`codenv: ${warning}`);
         }
     }
 

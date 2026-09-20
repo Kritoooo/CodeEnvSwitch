@@ -8,6 +8,9 @@ import type {
     UsageResetArgs,
     ProfileType,
     StatuslineArgs,
+    AdoptArgs,
+    LoginArgs,
+    MigrateArgs,
 } from "../types";
 import { normalizeType } from "../profile/type";
 
@@ -333,5 +336,68 @@ export function parseStatuslineArgs(args: string[]): StatuslineArgs {
         throw new Error(`Unknown statusline argument: ${arg}`);
     }
 
+    return result;
+}
+
+export function parseAdoptArgs(args: string[]): AdoptArgs {
+    const result: AdoptArgs = { type: null, name: null };
+    const positional: string[] = [];
+    for (const arg of args) {
+        if (arg.startsWith("-")) throw new Error(`Unknown adopt argument: ${arg}`);
+        positional.push(arg);
+    }
+    if (positional.length > 0) result.type = normalizeType(positional[0]);
+    if (!result.type && positional.length > 0) {
+        throw new Error(`Unknown type: ${positional[0]}`);
+    }
+    if (positional.length > 1) result.name = positional[1];
+    return result;
+}
+
+export function parseLoginArgs(args: string[]): LoginArgs {
+    const parsed = parseAdoptArgs(args);
+    return { type: parsed.type, name: parsed.name };
+}
+
+export function parseMigrateArgs(args: string[]): MigrateArgs {
+    const result: MigrateArgs = {
+        types: [],
+        dryRun: false,
+        yes: false,
+        loginNames: {},
+    };
+    let pendingType: ProfileType | null = null;
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === "--dry-run" || arg === "-d") {
+            result.dryRun = true;
+            continue;
+        }
+        if (arg === "-y" || arg === "--yes") {
+            result.yes = true;
+            continue;
+        }
+        let loginValue: string | null = null;
+        if (arg === "--login") {
+            loginValue = args[i + 1];
+            if (!loginValue) throw new Error("Missing value for --login.");
+            i++;
+        } else if (arg.startsWith("--login=")) {
+            loginValue = arg.slice("--login=".length);
+        }
+        if (loginValue !== null) {
+            const target = pendingType || result.types[result.types.length - 1];
+            if (!target) {
+                throw new Error("--login must follow a type, e.g. codenv migrate codex --login pro.");
+            }
+            result.loginNames[target] = loginValue;
+            continue;
+        }
+        if (arg.startsWith("-")) throw new Error(`Unknown migrate argument: ${arg}`);
+        const type = normalizeType(arg);
+        if (!type) throw new Error(`Unknown type: ${arg}`);
+        if (!result.types.includes(type)) result.types.push(type);
+        pendingType = type;
+    }
     return result;
 }

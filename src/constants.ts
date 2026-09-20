@@ -1,11 +1,17 @@
 /**
  * Constants for codenv
  */
-import * as path from "path";
-import * as os from "os";
 import type { ProfileType } from "./types";
 
-export const CODEX_AUTH_PATH = path.join(os.homedir(), ".codex", "auth.json");
+/** Comment markers delimiting the block codenv owns inside config.toml. */
+export const CODENV_BLOCK_START = "# >>> codenv >>>";
+export const CODENV_BLOCK_END = "# <<< codenv <<<";
+
+/** Provider id codenv creates for API profiles, distinct from codex's built-in "openai". */
+export const CODEX_PROVIDER_NAME = "OpenAI";
+
+/** Restored as `model_provider` whenever no API profile is active. */
+export const CODEX_DEFAULT_BASE_PROVIDER = "openai";
 
 export const DEFAULT_PROFILE_TYPES: ProfileType[] = ["codex", "claude"];
 

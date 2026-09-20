@@ -51,10 +51,9 @@ export async function runInteractiveAdd(configPath: string): Promise<void> {
             for (const key of API_CREDENTIAL_KEYS) {
                 delete profile.env[key];
             }
-            const loginCmd = type === "codex" ? "codex login" : "claude /login";
             console.log(
-                `Note: this profile reuses the account login stored by ${type}. ` +
-                `If you are not logged in yet, run \`${loginCmd}\` once.`
+                `Note: this profile owns its own ${type} account credentials. ` +
+                `Run \`codenv login ${type} ${profileInfo.name}\` once to sign in.`
             );
         } else {
             delete profile.authMode;

@@ -13,7 +13,7 @@ export function printUnset(config: Config): void {
     for (const type of DEFAULT_PROFILE_TYPES) {
         for (const key of getTypeDefaultUnsetKeys(type)) keySet.add(key);
     }
-    const lines: string[] = ["command codenv __codex-clear"];
+    const lines: string[] = ["command codenv __account-reset"];
     if (keySet.size > 0) {
         lines.push(...Array.from(keySet, (key) => `unset ${key}`));
     }

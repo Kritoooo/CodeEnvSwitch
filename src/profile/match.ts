@@ -2,7 +2,7 @@
  * Profile matching utilities
  */
 import type { Config, Profile, ProfileType } from "../types";
-import { normalizeType, hasEnvKeyPrefix, hasTypePrefix, getProfileDisplayName } from "./type";
+import { normalizeType, getProfileDisplayName } from "./type";
 
 export function profileMatchesType(profile: Profile | undefined, type: ProfileType): boolean {
     if (!profile) return false;
@@ -26,16 +26,4 @@ export function findProfileKeysByName(
         if (displayName === name) matches.push(key);
     }
     return matches;
-}
-
-export function shouldRemoveCodexAuth(
-    profileName: string,
-    profile: Profile | undefined,
-    requestedType: ProfileType | null
-): boolean {
-    if (requestedType === "codex") return true;
-    if (!profile) return false;
-    if (normalizeType(profile.type) === "codex") return true;
-    if (hasEnvKeyPrefix(profile, "OPENAI_")) return true;
-    return hasTypePrefix(profileName, "codex");
 }

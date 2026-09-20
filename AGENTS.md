@@ -1,14 +1,14 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` holds TypeScript sources. Key areas: `src/cli/` argument parsing, `src/commands/` CLI actions, `src/config/` config IO, `src/profile/` profile resolution, `src/shell/` shell integration, `src/ui/` prompts, `src/usage/` logging.
+- `src/` holds TypeScript sources. Key areas: `src/cli/` argument parsing, `src/commands/` CLI actions, `src/config/` config IO, `src/profile/` profile resolution, `src/shell/` shell integration, `src/ui/` prompts, `src/usage/` logging, `src/accounts/` per-profile credential vault.
 - `bin/` contains compiled JavaScript from `tsc`; treat it as generated output.
 - `code-env.example.json` is the public config template; `README.md` and `README_zh.md` are user docs.
 
 ## Build, Test, and Development Commands
 - `npm install` installs dependencies.
 - `npm run build` compiles `src/` to `bin/` using `tsconfig.json`.
-- `npm run lint` runs ESLint; `npm run lint:fix` auto-fixes.
+- `npm run lint` runs ESLint (flat config in `eslint.config.js`); `npm run lint:fix` auto-fixes.
 - `npm link` (or `npm install -g .`) installs the CLI locally for manual testing.
 - No automated test script is configured yet.
 

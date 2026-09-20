@@ -2,7 +2,7 @@
  * Profile resolution utilities
  */
 import type { Config, ProfileType } from "../types";
-import { normalizeType } from "./type";
+import { normalizeType, inferProfileType, getProfileDisplayName } from "./type";
 import { profileMatchesType, findProfileKeysByName } from "./match";
 
 export function generateProfileKey(config: Config): string {
@@ -81,4 +81,22 @@ export function resolveProfileByType(
         }
     }
     throw new Error(`Unknown profile for type "${type}": ${name}`);
+}
+
+/** Resolve the profile a shell is currently on, from the exported markers. */
+export function resolveProfileFromEnv(
+    config: Config,
+    type: ProfileType,
+    profileKey: string | null,
+    profileName: string | null
+): string | null {
+    const profiles = config.profiles || {};
+    if (profileKey && profiles[profileKey]) return profileKey;
+    if (!profileName) return null;
+    for (const [key, profile] of Object.entries(profiles)) {
+        if (inferProfileType(key, profile || {}, null) !== type) continue;
+        const displayName = getProfileDisplayName(key, profile || {}, type);
+        if (displayName === profileName || key === profileName) return key;
+    }
+    return null;
 }

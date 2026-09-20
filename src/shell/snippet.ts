@@ -70,7 +70,7 @@ export function upsertShellSnippet(rcPath: string, snippet: string): void {
     const markerEnd = "# <<< codenv <<<";
     const block = `${markerStart}\n${snippet}\n${markerEnd}`;
     const existing = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, "utf8") : "";
-    let updated = "";
+    let updated: string;
 
     if (existing.includes(markerStart) && existing.includes(markerEnd)) {
         const re = new RegExp(

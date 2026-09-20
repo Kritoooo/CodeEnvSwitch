@@ -1,6 +1,6 @@
 {
   "name": "@praeviso/code-env-switch",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "description": "Switch between Claude Code and Codex profiles from a single CLI",
   "bin": {
     "codenv": "bin/index.js"
@@ -16,6 +16,7 @@
     "node": ">=16"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.11.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",

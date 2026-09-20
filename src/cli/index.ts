@@ -7,5 +7,8 @@ export {
     parseAddArgs,
     parseUsageResetArgs,
     parseStatuslineArgs,
+    parseAdoptArgs,
+    parseLoginArgs,
+    parseMigrateArgs,
 } from "./args";
 export { printHelp } from "./help";

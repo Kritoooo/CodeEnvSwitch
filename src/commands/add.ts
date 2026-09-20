@@ -70,7 +70,7 @@ export function addConfig(config: Config, addArgs: AddArgs): Config {
         const value = pair.slice(idx + 1);
         if (addArgs.login && API_CREDENTIAL_KEYS.has(key.toUpperCase())) {
             throw new Error(
-                `Login profiles use the account login stored by codex/claude; drop ${key} or omit --login.`
+                `Login profiles own an account login, not an API key; drop ${key} or omit --login.`
             );
         }
         profile.env[key] = value;

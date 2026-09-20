@@ -114,7 +114,7 @@ function parseTomlStringArray(raw: string): string[] | null {
 
     const items: string[] = [];
     const regex = /"((?:\\.|[^"\\])*)"|'([^']*)'/g;
-    let match: RegExpExecArray | null = null;
+    let match: RegExpExecArray | null;
     while ((match = regex.exec(trimmed))) {
         if (match[0].startsWith("\"")) {
             items.push(match[1].replace(/\\"/g, "\"").replace(/\\\\/g, "\\"));

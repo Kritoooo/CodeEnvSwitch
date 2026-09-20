@@ -1,11 +1,17 @@
 {
   "unset": [],
+  "codexBaseModelProvider": "openai",
   "defaultProfiles": {
     "codex": "primary",
     "claude": "default"
   },
   "codexStatusline": {
-    "items": ["model-with-reasoning", "context-remaining", "current-dir", "git-branch"]
+    "items": [
+      "model-with-reasoning",
+      "context-remaining",
+      "current-dir",
+      "git-branch"
+    ]
   },
   "claudeStatusline": {
     "command": "codenv statusline --type claude --sync-usage",
@@ -71,26 +77,20 @@
     "p_a1b2c3": {
       "name": "primary",
       "type": "codex",
-      "note": "Primary endpoint (applied via ~/.codex/config.toml)",
+      "note": "Primary endpoint",
       "env": {
         "OPENAI_BASE_URL": "https://api.example.com/v1",
         "OPENAI_API_KEY": "YOUR_API_KEY"
-      },
-      "removeFiles": [
-        "$HOME/.config/example/auth.json"
-      ]
+      }
     },
     "p_d4e5f6": {
       "name": "secondary",
       "type": "codex",
-      "note": "Secondary endpoint (applied via ~/.codex/config.toml)",
+      "note": "Secondary endpoint",
       "env": {
         "OPENAI_BASE_URL": "https://api.secondary.example.com/v1",
         "OPENAI_API_KEY": "YOUR_API_KEY"
-      },
-      "removeFiles": [
-        "$HOME/.config/example/auth.json"
-      ]
+      }
     },
     "p_g7h8i9": {
       "name": "default",
@@ -105,13 +105,19 @@
       "name": "chatgpt",
       "type": "codex",
       "authMode": "login",
-      "note": "Official ChatGPT login (restores ~/.codex/auth.json)"
+      "note": "Official ChatGPT login (own account vault)"
     },
     "p_m3n4o5": {
       "name": "personal",
       "type": "claude",
       "authMode": "login",
-      "note": "Claude.ai account login (unsets ANTHROPIC_* vars)"
+      "note": "Claude.ai account login (own account vault)"
+    },
+    "p_q6r7s8": {
+      "name": "chatgpt-second",
+      "type": "codex",
+      "authMode": "login",
+      "note": "A second ChatGPT account; run `codenv login codex chatgpt-second`"
     }
   }
 }
