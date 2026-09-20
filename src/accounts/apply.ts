@@ -1,13 +1,66 @@
 /**
  * Applying a profile's account to the live credential path
  */
+import * as fs from "fs";
+import * as path from "path";
 import type { Config, ProfileType } from "../types";
 import { isLoginProfile } from "../profile/type";
 import { applyCodexConfigToml, buildCodexApiAuthJson } from "../codex/config";
-import { checkoutVault, reconcileVault, writeVaultCredential } from "./vault";
+import { detectAuthMode } from "./identity";
+import {
+    checkoutVault,
+    getVaultCredentialPath,
+    readVaultCredential,
+    reconcileVault,
+    writeVaultCredential,
+} from "./vault";
 
 export interface ApplyReport {
     warnings: string[];
+}
+
+/**
+ * Move a real account login out of the way before a derived file overwrites it.
+ *
+ * Flipping a profile from login to API is a config edit, not a reason to lose a
+ * credential that may need a browser round-trip to recreate.
+ */
+function archiveLoginCredential(
+    configPath: string | null,
+    type: ProfileType,
+    profileKey: string
+): string | null {
+    const current = readVaultCredential(configPath, type, profileKey);
+    if (detectAuthMode(type, current) !== "login") return null;
+    const vaultPath = getVaultCredentialPath(configPath, type, profileKey);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const archived = path.join(
+        path.dirname(vaultPath),
+        `${path.basename(vaultPath)}.login-${stamp}`
+    );
+    try {
+        fs.renameSync(vaultPath, archived);
+    } catch {
+        return null;
+    }
+    return archived;
+}
+
+/**
+ * Drop a derived API credential left behind when a profile became a login one.
+ *
+ * Without this the stale file would be mounted as if it were the account login,
+ * so codex would quietly keep running on the old key.
+ */
+function clearDerivedCredential(
+    configPath: string | null,
+    type: ProfileType,
+    profileKey: string
+): boolean {
+    const current = readVaultCredential(configPath, type, profileKey);
+    if (detectAuthMode(type, current) !== "api") return false;
+    writeVaultCredential(configPath, type, profileKey, null);
+    return true;
 }
 
 /**
@@ -38,15 +91,34 @@ export function applyProfileAccount(
     }
 
     const login = isLoginProfile(profile);
-    if (type === "codex") {
-        applyCodexConfigToml(config, profile);
-        if (!login) {
-            writeVaultCredential(configPath, type, profileKey, buildCodexApiAuthJson(profile));
+    if (type === "codex") applyCodexConfigToml(config, profile);
+
+    if (login) {
+        // The vault may still hold a derived file from when this profile was an
+        // API one; mounting it would silently keep the old key in use.
+        if (clearDerivedCredential(configPath, type, profileKey)) {
+            warnings.push(
+                `${type}: profile is now a login profile but its vault held an ` +
+                `API credential; removed it. Run \`codenv login ${type} <name>\` to sign in.`
+            );
         }
-    } else if (!login) {
-        // An API profile must not see the account login, so its vault file is
-        // deliberately absent: claude reads that as "not logged in".
-        writeVaultCredential(configPath, type, profileKey, null);
+    } else {
+        const archived = archiveLoginCredential(configPath, type, profileKey);
+        if (archived) {
+            warnings.push(
+                `${type}: profile is now an API profile; its account login was ` +
+                `moved to ${archived} instead of being overwritten.`
+            );
+        }
+        // An API profile must not see an account login. For codex the file is
+        // derived from the configured key; for claude it stays absent, which
+        // claude reads as "not logged in".
+        writeVaultCredential(
+            configPath,
+            type,
+            profileKey,
+            type === "codex" ? buildCodexApiAuthJson(profile) : null
+        );
     }
 
     checkoutVault(configPath, type, profileKey);

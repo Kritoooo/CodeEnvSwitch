@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` holds TypeScript sources. Key areas: `src/cli/` argument parsing, `src/commands/` CLI actions, `src/config/` config IO, `src/profile/` profile resolution, `src/shell/` shell integration, `src/ui/` prompts, `src/usage/` logging, `src/accounts/` per-profile credential vault.
+- `src/` holds TypeScript sources. Key areas: `src/cli/` argument parsing, `src/commands/` CLI actions, `src/config/` config IO, `src/profile/` profile resolution, `src/shell/` shell integration, `src/ui/` prompts, `src/tui/` full-screen browser and editor, `src/usage/` logging, `src/accounts/` per-profile credential vault.
 - `bin/` contains compiled JavaScript from `tsc`; treat it as generated output.
 - `code-env.example.json` is the public config template; `README.md` and `README_zh.md` are user docs.
 

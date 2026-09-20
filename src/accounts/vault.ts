@@ -284,7 +284,13 @@ export function checkoutVault(
     return entry.mode;
 }
 
-/** Overwrite a profile's vault file with content codenv derives from config. */
+/**
+ * Overwrite a profile's vault file with content codenv derives from config.
+ *
+ * Identical content is skipped: `codenv auto` re-derives the active profile on
+ * every interactive shell start, and rewriting a credential file that has not
+ * changed only churns its mtime.
+ */
 export function writeVaultCredential(
     configPath: string | null,
     type: ProfileType,
@@ -292,8 +298,8 @@ export function writeVaultCredential(
     content: string | null
 ): void {
     const vaultPath = getVaultCredentialPath(configPath, type, profileKey);
-    ensureDir(path.dirname(vaultPath));
     if (content === null) {
+        if (!fs.existsSync(vaultPath)) return;
         try {
             fs.unlinkSync(vaultPath);
         } catch {
@@ -301,6 +307,14 @@ export function writeVaultCredential(
         }
         return;
     }
+    let current: string | null;
+    try {
+        current = fs.readFileSync(vaultPath, "utf8");
+    } catch {
+        current = null;
+    }
+    if (current === content) return;
+    ensureDir(path.dirname(vaultPath));
     fs.writeFileSync(vaultPath, content, { encoding: "utf8", mode: CREDENTIAL_MODE });
 }
 

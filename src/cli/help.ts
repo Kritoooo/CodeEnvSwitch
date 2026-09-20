@@ -10,7 +10,7 @@ Usage:
   codenv ls
   codenv config
   codenv auto
-  codenv use
+  codenv use                  (full-screen profile browser)
   codenv use <profile>
   codenv use <type> <name>
   codenv show <profile>
@@ -23,7 +23,7 @@ Usage:
   codenv remove --all
   codenv unset
   codenv add <profile> KEY=VALUE [KEY=VALUE ...]
-  codenv add
+  codenv add                  (new profile form)
   codenv launch <codex|claude> [--] [args...]
   codenv login <codex|claude> <name>
   codenv adopt <codex|claude> <name>

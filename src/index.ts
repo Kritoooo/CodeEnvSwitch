@@ -41,7 +41,8 @@ import {
     runUsageReset,
 } from "./commands";
 import { logProfileUse } from "./usage";
-import { createReadline, askConfirm, runInteractiveAdd, runInteractiveUse } from "./ui";
+import { createReadline, askConfirm } from "./ui";
+import { runProfileTui } from "./tui";
 import { applyCodexConfigToml } from "./codex/config";
 import {
     applyProfileAccount,
@@ -120,7 +121,10 @@ async function main() {
             const addArgsRaw = args.slice(1);
             const hasInteractive = addArgsRaw.length === 0;
             if (hasInteractive) {
-                await runInteractiveAdd(writePath);
+                const existing = readConfigIfExists(writePath);
+                await runProfileTui(existing, writePath, () => undefined, {
+                    startNew: true,
+                });
                 return;
             }
             const addArgsResult = parseAddArgs(addArgsRaw);
@@ -427,7 +431,7 @@ async function main() {
                     );
                     printUse(cfg, profileName, requestedType, true, configPath);
                 };
-                await runInteractiveUse(config, printUseWithLog);
+                await runProfileTui(config, configPath, printUseWithLog);
                 return;
             }
             const requestedType =

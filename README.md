@@ -103,17 +103,30 @@ codenv add --type codex primary OPENAI_BASE_URL=https://api.example.com/v1 OPENA
 When `--type` is set, the profile name is kept as-is and `type` is stored separately.
 Profiles are keyed by an internal id; the human-facing name lives in `profile.name`.
 
-Codex profiles continue to store `OPENAI_BASE_URL` and `OPENAI_API_KEY` in the
-JSON config for backward compatibility. When a Codex profile is applied,
-`codenv` now unsets those shell variables, writes `~/.codex/config.toml` with
-`model_provider = "OpenAI"` plus a `[model_providers.OpenAI]` block, and writes
-`~/.codex/auth.json` with the matching API key.
+Codex profiles store `OPENAI_BASE_URL` and `OPENAI_API_KEY` in the JSON config.
+When a Codex profile is applied, `codenv` unsets those shell variables, points
+`model_provider` in `~/.codex/config.toml` at a codenv-managed block, and writes
+the key into the profile's own credential file (see Login profiles below).
+Everything else in `config.toml` is left alone.
 
-Interactive add (default):
+### Browsing and editing profiles
 
 ```bash
-codenv add
+codenv use     # full-screen profile browser
+codenv add     # jump straight to a blank profile form
 ```
+
+```
+↑↓ move   Enter apply   e edit   n new   d delete   / filter   q quit
+```
+
+The editor is the only place that can remove an env key or drop a
+`removeFiles` / `commands` entry — the `add` flags can add and overwrite, but
+never delete. It also shows what an auth switch will do to the profile's stored
+credential before you save.
+
+Both fall back to an error outside a TTY; `codenv use <name>` and the `add`
+flags remain the scriptable path.
 
 ### Login profiles and multiple accounts
 

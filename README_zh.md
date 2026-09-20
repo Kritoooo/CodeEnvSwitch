@@ -20,23 +20,27 @@
 npm install -g @praeviso/code-env-switch
 ```
 
-2) 交互式添加 profile（若不存在会创建 `~/.config/code-env/config.json`）：
+2) 添加 profile（若不存在会创建 `~/.config/code-env/config.json`）：
 
 ```bash
 codenv add
-# 再执行一次，用来添加另一种 type
-codenv add
 ```
 
-交互示例：
+会直接打开新建表单：
 
 ```text
-$ codenv add
-Select type (1=codex, 2=claude): 1
-Profile name (default: default): primary
-Base URL (required): https://api.example.com/v1
-API key (required): YOUR_API_KEY
+New profile
+
+ name                  (empty)
+ type                  codex   (space toggles)
+ auth                  API key   (space toggles)
+ OPENAI_BASE_URL       (empty)
+ OPENAI_API_KEY        (empty)
+ note                  (empty)
+
+↑↓ move   Enter edit/toggle   a add   d delete   s save   q cancel
 ```
+
 
 3) 按 type 设置默认项：
 
@@ -106,8 +110,25 @@ profiles 使用内部 key，展示名称存放在 `profile.name`。
 为了兼容旧配置，Codex profile 仍然在 JSON 里保存
 `OPENAI_BASE_URL` / `OPENAI_API_KEY`。但在实际应用 Codex profile 时，
 `codenv` 会先清理这些 shell 变量，再把对应值写入
-`~/.codex/config.toml` 的 `model_provider = "OpenAI"` 与
-`[model_providers.OpenAI]`，并同步写入 `~/.codex/auth.json`。
+`~/.codex/config.toml` 中由 codenv 托管的块，并把 key 写入该 profile 自己的
+凭据文件（见下方「登录 profile 与多账号」）。`config.toml` 的其余内容不会被改动。
+
+### 浏览与编辑 profile
+
+```bash
+codenv use     # 全屏 profile 浏览器
+codenv add     # 直接进入空白新建表单
+```
+
+```
+↑↓ 移动   Enter 应用   e 编辑   n 新建   d 删除   / 过滤   q 退出
+```
+
+编辑器是唯一能**删除** env 键、删除 `removeFiles` / `commands` 条目的地方
+——`add` 的参数只能新增和覆盖，删不掉。切换 auth 方式时也会在保存前提示
+该 profile 已存的凭据会被如何处理。
+
+非 TTY 环境下两者都会报错；`codenv use <name>` 和 `add` 的参数形式仍是脚本路径。
 
 交互式添加（默认）：
 
