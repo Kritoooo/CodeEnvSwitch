@@ -116,9 +116,11 @@ profiles 使用内部 key，展示名称存放在 `profile.name`。
 ### 浏览与编辑 profile
 
 ```bash
-codenv use     # 全屏 profile 浏览器
+codenv         # profile 浏览器：应用、编辑、新建、删除
 codenv add     # 直接进入空白新建表单
 ```
+
+`codenv use` 不带参数会打开同一个浏览器。
 
 ```
 ↑↓ 移动   Enter 应用   e 编辑   n 新建   d 删除   / 过滤   q 退出
@@ -128,7 +130,12 @@ codenv add     # 直接进入空白新建表单
 ——`add` 的参数只能新增和覆盖，删不掉。切换 auth 方式时也会在保存前提示
 该 profile 已存的凭据会被如何处理。
 
-非 TTY 环境下两者都会报错；`codenv use <name>` 和 `add` 的参数形式仍是脚本路径。
+非 TTY 环境下 `codenv` 仍按原样打印帮助；`codenv use <name>` 和 `add` 的参数
+形式仍是脚本路径。
+
+应用 profile 需要把变量注入当前 shell，所以浏览器只在通过 shell 函数调用时
+才启用该操作。**从 0.2.x 升级需要重跑一次 `codenv init`**，让裸 `codenv` 也走
+source；在那之前浏览器照常打开，只是会提示 apply 不可用。
 
 交互式添加（默认）：
 

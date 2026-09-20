@@ -6,11 +6,12 @@ export function printHelp(): void {
     const msg = `codenv - switch Claude/Codex profiles
 
 Usage:
+  codenv                      (profile browser: apply, edit, create)
   codenv list
   codenv ls
   codenv config
   codenv auto
-  codenv use                  (full-screen profile browser)
+  codenv use                  (same browser)
   codenv use <profile>
   codenv use <type> <name>
   codenv show <profile>

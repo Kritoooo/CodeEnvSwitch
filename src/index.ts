@@ -42,7 +42,7 @@ import {
 } from "./commands";
 import { logProfileUse } from "./usage";
 import { createReadline, askConfirm } from "./ui";
-import { runProfileTui } from "./tui";
+import { runProfileTui, isInteractive } from "./tui";
 import { applyCodexConfigToml } from "./codex/config";
 import {
     applyProfileAccount,
@@ -58,6 +58,21 @@ function getErrorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
 }
 
+/** Applying from the TUI logs the switch and prints the shell lines to stdout. */
+function makeApplyProfile(configPath: string | null) {
+    return (cfg: Config, profileKey: string, requestedType: ProfileType | null) => {
+        logProfileUse(
+            cfg,
+            configPath,
+            profileKey,
+            requestedType,
+            process.env.CODE_ENV_TERMINAL_TAG || null,
+            process.cwd()
+        );
+        printUse(cfg, profileKey, requestedType, true, configPath);
+    };
+}
+
 async function main() {
     const parsed = parseArgs(process.argv.slice(2));
     if (parsed.help) {
@@ -68,7 +83,15 @@ async function main() {
     const args = parsed.args || [];
 
     if (args.length === 0) {
-        printHelp();
+        // Outside a terminal there is nothing to draw on, so keep the old
+        // behaviour for scripts and `codenv | cat`.
+        if (!isInteractive()) {
+            printHelp();
+            return;
+        }
+        const configPath = findConfigPath(parsed.configPath);
+        const config = readConfigIfExists(configPath);
+        await runProfileTui(config, configPath, makeApplyProfile(configPath));
         return;
     }
 
@@ -416,22 +439,7 @@ async function main() {
         if (cmd === "use") {
             const params = args.slice(1);
             if (params.length === 0) {
-                const printUseWithLog = (
-                    cfg: Config,
-                    profileName: string,
-                    requestedType: ProfileType | null
-                ) => {
-                    logProfileUse(
-                        cfg,
-                        configPath,
-                        profileName,
-                        requestedType,
-                        process.env.CODE_ENV_TERMINAL_TAG || null,
-                        process.cwd()
-                    );
-                    printUse(cfg, profileName, requestedType, true, configPath);
-                };
-                await runProfileTui(config, configPath, printUseWithLog);
+                await runProfileTui(config, configPath, makeApplyProfile(configPath));
                 return;
             }
             const requestedType =

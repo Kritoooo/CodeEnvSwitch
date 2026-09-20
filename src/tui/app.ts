@@ -35,6 +35,7 @@ interface Entry {
 }
 
 interface AppState {
+    canApply: boolean;
     config: Config;
     entries: Entry[];
     index: number;
@@ -182,7 +183,9 @@ function renderList(state: AppState, width: number, rows: number): string[] {
         lines.push("");
     }
     lines.push(
-        `${DIM}↑↓ move   Enter apply   e edit   n new   d delete   / filter   q quit${RESET}`
+        `${DIM}↑↓ move   ${
+            state.canApply ? "Enter apply   " : ""
+        }e edit   n new   d delete   / filter   q quit${RESET}`
     );
     return lines;
 }
@@ -206,6 +209,9 @@ export async function runProfileTui(
     }
 
     const state: AppState = {
+        // Sourced through the shell helper, stdout is a pipe. A TTY here means
+        // the shell cannot receive the exports, so applying would do nothing.
+        canApply: !process.stdout.isTTY,
         config: initialConfig,
         entries: buildEntries(initialConfig, configPath),
         index: 0,
@@ -336,6 +342,12 @@ export async function runProfileTui(
             } else if (str === "d" && current) {
                 state.pendingDelete = current.row.key;
             } else if ((name === "return" || name === "enter") && current) {
+                if (!state.canApply) {
+                    state.message =
+                        "Not running through the shell helper; run `codenv init` to enable apply.";
+                    draw();
+                    return;
+                }
                 // Only one profile per type can be active, so drop the others.
                 for (const key of Array.from(state.appliedKeys)) {
                     const entry = state.entries.find((item) => item.row.key === key);

@@ -112,9 +112,11 @@ Everything else in `config.toml` is left alone.
 ### Browsing and editing profiles
 
 ```bash
-codenv use     # full-screen profile browser
+codenv         # profile browser: apply, edit, create, delete
 codenv add     # jump straight to a blank profile form
 ```
+
+`codenv use` with no arguments opens the same browser.
 
 ```
 ↑↓ move   Enter apply   e edit   n new   d delete   / filter   q quit
@@ -125,8 +127,13 @@ The editor is the only place that can remove an env key or drop a
 never delete. It also shows what an auth switch will do to the profile's stored
 credential before you save.
 
-Both fall back to an error outside a TTY; `codenv use <name>` and the `add`
-flags remain the scriptable path.
+Outside a TTY `codenv` prints help as before, and `codenv use <name>` plus the
+`add` flags remain the scriptable path.
+
+Applying a profile has to reach the current shell, so the browser only enables
+it when invoked through the shell helper. **Upgrading from 0.2.x requires
+re-running `codenv init`** so that a bare `codenv` is sourced; until then the
+browser still opens, but tells you apply is unavailable.
 
 ### Login profiles and multiple accounts
 
