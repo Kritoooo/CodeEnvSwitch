@@ -2,6 +2,14 @@
   "name": "@praeviso/code-env-switch",
   "version": "0.3.2",
   "description": "Switch between Claude Code and Codex profiles from a single CLI",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kritoooo/CodeEnvSwitch.git"
+  },
+  "homepage": "https://github.com/Kritoooo/CodeEnvSwitch#readme",
+  "bugs": {
+    "url": "https://github.com/Kritoooo/CodeEnvSwitch/issues"
+  },
   "bin": {
     "codenv": "bin/index.js"
   },
