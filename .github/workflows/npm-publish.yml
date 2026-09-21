@@ -13,6 +13,10 @@ jobs:
       contents: read
       # Required for npm trusted publishing: lets the job mint an OIDC token
       # that npm verifies instead of a long-lived NPM_TOKEN secret.
+      #
+      # This credential is job-scoped, so every step below runs within reach of
+      # it. Keep that blast radius small: no third-party install scripts, and
+      # no floating versions of anything that executes here.
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -21,9 +25,13 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
-      # Trusted publishing needs npm >= 11.5.1; pin ahead of whatever ships.
-      - run: npm install -g npm@latest
-      - run: npm ci
+      # Pinned, not @latest: this runs alongside the OIDC credential, so a
+      # compromised npm release must not be able to publish as us.
+      # Trusted publishing needs >= 11.5.1.
+      - run: npm install -g npm@12.0.2
+      # Dependency lifecycle scripts are arbitrary third-party code. The build
+      # only needs typescript/eslint, which require no install scripts.
+      - run: npm ci --ignore-scripts
       - run: npm run build
       # No NODE_AUTH_TOKEN: npm authenticates over OIDC and attaches provenance.
       - run: npm publish --access public
