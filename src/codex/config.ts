@@ -17,11 +17,12 @@ import {
 } from "../constants";
 import { isLoginProfile } from "../profile/type";
 import { expandEnv, resolvePath } from "../shell/utils";
+import { escapeRegex } from "../utils";
 
 const DEFAULT_CODEX_CONFIG_PATH = path.join(os.homedir(), ".codex", "config.toml");
 const CODEX_PROVIDER_WIRE_API = "responses";
 
-interface TomlSectionRange {
+export interface TomlSectionRange {
     start: number;
     end: number;
     sectionText: string;
@@ -57,11 +58,7 @@ function writeText(filePath: string, text: string): void {
     fs.writeFileSync(filePath, text, "utf8");
 }
 
-function escapeRegex(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function parseSectionByHeader(
+export function parseSectionByHeader(
     text: string,
     headerRegex: RegExp
 ): TomlSectionRange | null {

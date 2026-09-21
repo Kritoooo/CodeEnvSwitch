@@ -289,11 +289,7 @@ async function main() {
             }
             const isAll = params.length === 1 && params[0] === "--all";
             if (isAll) {
-                if (!config.profiles || typeof config.profiles !== "object") {
-                    config.profiles = {};
-                } else {
-                    config.profiles = {};
-                }
+                config.profiles = {};
                 if (Object.prototype.hasOwnProperty.call(config, "defaultProfiles")) {
                     delete config.defaultProfiles;
                 }

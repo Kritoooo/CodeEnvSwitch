@@ -20,7 +20,7 @@ import {
     type ProfileForm,
 } from "./form";
 import { createEditor, handleEditorKey, renderEditor, type LineEditor } from "./input";
-import { DIM, GREEN, INVERT, RESET, YELLOW, fit, isInteractive, pad, runTui } from "./screen";
+import { DIM, GREEN, INVERT, RESET, YELLOW, fit, isInteractive, runTui } from "./screen";
 
 export type ApplyProfile = (
     config: Config,
@@ -130,10 +130,10 @@ function renderList(state: AppState, width: number, rows: number): string[] {
         Math.max(7, ...entries.map((e) => e.account.length))
     );
     const format = (name: string, type: string, account: string, note: string) =>
-        `${pad(name, nameWidth)}  ${pad(type, typeWidth)}  ${pad(
-            fit(account, accountWidth),
+        `${name.padEnd(nameWidth)}  ${type.padEnd(typeWidth)}  ${fit(
+            account,
             accountWidth
-        )}  ${note}`;
+        ).padEnd(accountWidth)}  ${note}`;
 
     lines.push(format("PROFILE", "TYPE", "ACCOUNT", "NOTE"));
     lines.push(

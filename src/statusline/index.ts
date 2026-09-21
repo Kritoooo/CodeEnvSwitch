@@ -92,10 +92,6 @@ export function buildStatuslineResult(
     if (profileKey && !profileName && config.profiles && config.profiles[profileKey]) {
         const profile = config.profiles[profileKey];
         profileName = getProfileDisplayName(profileKey, profile, type || undefined);
-        if (!type) {
-            const inferred = inferProfileType(profileKey, profile, null);
-            if (inferred) type = inferred;
-        }
     }
 
     if (!type && profileKey && config.profiles && config.profiles[profileKey]) {
@@ -204,16 +200,11 @@ export function buildStatuslineResult(
         shouldSyncUsageFromSessions
     );
 
-    let finalUsage: StatuslineUsage | null = hasExplicitUsage ? usage : null;
-    if (!finalUsage && args.syncUsage && recordsUsage) {
-        finalUsage = recordsUsage;
-    }
-    if (!finalUsage) {
-        finalUsage = stdinUsage;
-    }
-    if (!finalUsage && recordsUsage) {
-        finalUsage = recordsUsage;
-    }
+    const finalUsage: StatuslineUsage | null = hasExplicitUsage
+        ? usage
+        : args.syncUsage && recordsUsage
+          ? recordsUsage
+          : stdinUsage || recordsUsage || null;
 
     let gitStatus = getGitStatus(cwd);
     if (!gitStatus) {

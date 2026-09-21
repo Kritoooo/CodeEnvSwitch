@@ -7,8 +7,18 @@ import * as os from "os";
 import type { Config } from "../types";
 import { resolvePath } from "../shell/utils";
 
+/**
+ * The directory holding config.json and everything stored beside it (usage
+ * log, profile log, statusline debug log, credential vault). Every such path
+ * must derive from here so relocating the directory stays a one-line change.
+ */
+export function getConfigDir(configPath: string | null): string {
+    if (configPath) return path.dirname(configPath);
+    return path.join(os.homedir(), ".config", "code-env");
+}
+
 export function getDefaultConfigPath(): string {
-    return path.join(os.homedir(), ".config", "code-env", "config.json");
+    return path.join(getConfigDir(null), "config.json");
 }
 
 export function findConfigPath(explicitPath: string | null): string | null {

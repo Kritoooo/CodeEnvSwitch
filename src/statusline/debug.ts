@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import { resolvePath } from "../shell/utils";
+import { getConfigDir } from "../config/io";
 
 function isStatuslineDebugEnabled(): boolean {
     const raw = process.env.CODE_ENV_STATUSLINE_DEBUG;
@@ -11,15 +11,10 @@ function isStatuslineDebugEnabled(): boolean {
     return !["0", "false", "no", "off"].includes(value);
 }
 
-function resolveDefaultConfigDir(configPath: string | null): string {
-    if (configPath) return path.dirname(configPath);
-    return path.join(os.homedir(), ".config", "code-env");
-}
-
 export function getStatuslineDebugPath(configPath: string | null): string {
     const envPath = resolvePath(process.env.CODE_ENV_STATUSLINE_DEBUG_PATH);
     if (envPath) return envPath;
-    return path.join(resolveDefaultConfigDir(configPath), "statusline-debug.jsonl");
+    return path.join(getConfigDir(configPath), "statusline-debug.jsonl");
 }
 
 export function appendStatuslineDebug(

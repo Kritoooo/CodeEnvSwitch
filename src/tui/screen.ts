@@ -106,7 +106,3 @@ export function fit(text: string, width: number): string {
     if (width <= 1) return text.slice(0, width);
     return `${text.slice(0, width - 1)}…`;
 }
-
-export function pad(text: string, width: number): string {
-    return text.length >= width ? text : text + " ".repeat(width - text.length);
-}

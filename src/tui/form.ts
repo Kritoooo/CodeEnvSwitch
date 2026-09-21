@@ -14,7 +14,7 @@ import {
     renderEditor,
     type LineEditor,
 } from "./input";
-import { DIM, INVERT, RESET, YELLOW, fit, pad } from "./screen";
+import { DIM, INVERT, RESET, YELLOW, fit } from "./screen";
 
 type SectionName = "env" | "removeFiles" | "commands";
 
@@ -358,7 +358,7 @@ export function renderForm(form: ProfileForm, width: number): string[] {
                     : form.draft.authMode === "api"
                     ? "API key"
                     : "account login";
-            text = `${pad(row.label, labelWidth)}${value}   ${DIM}(space toggles)${RESET}`;
+            text = `${row.label.padEnd(labelWidth)}${value}   ${DIM}(space toggles)${RESET}`;
         } else {
             const raw = fieldValue(form.draft, row.field);
             const shown = editing
@@ -366,7 +366,7 @@ export function renderForm(form: ProfileForm, width: number): string[] {
                 : row.field === "apiKey"
                 ? maskSecret(raw) || `${DIM}(empty)${RESET}`
                 : raw || `${DIM}(empty)${RESET}`;
-            text = `${pad(row.label, labelWidth)}${shown}`;
+            text = `${row.label.padEnd(labelWidth)}${shown}`;
         }
         const prefixed = ` ${text}`;
         lines.push(focused && !editing ? `${INVERT}${fit(prefixed, width)}${RESET}` : prefixed);

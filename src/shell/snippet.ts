@@ -3,6 +3,8 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { CODENV_BLOCK_START, CODENV_BLOCK_END } from "../constants";
+import { escapeRegex } from "../utils";
 
 export function getShellSnippet(shellName: string | null): string {
     if (shellName === "fish") {
@@ -61,20 +63,16 @@ export function getShellSnippet(shellName: string | null): string {
     ].join("\n");
 }
 
-export function escapeRegExp(value: string): string {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export function upsertShellSnippet(rcPath: string, snippet: string): void {
-    const markerStart = "# >>> codenv >>>";
-    const markerEnd = "# <<< codenv <<<";
+    const markerStart = CODENV_BLOCK_START;
+    const markerEnd = CODENV_BLOCK_END;
     const block = `${markerStart}\n${snippet}\n${markerEnd}`;
     const existing = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, "utf8") : "";
     let updated: string;
 
     if (existing.includes(markerStart) && existing.includes(markerEnd)) {
         const re = new RegExp(
-            `${escapeRegExp(markerStart)}[\\s\\S]*?${escapeRegExp(markerEnd)}`
+            `${escapeRegex(markerStart)}[\\s\\S]*?${escapeRegex(markerEnd)}`
         );
         // A replacer function keeps `$$` in the snippet literal; as a string it
         // would be read as an escaped `$` and eat the shell's PID variable.

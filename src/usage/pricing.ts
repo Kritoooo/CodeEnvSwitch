@@ -1,4 +1,5 @@
 import type { Config, Profile, TokenPricing } from "../types";
+import { coerceNumber } from "../utils";
 
 const TOKENS_PER_MILLION = 1_000_000;
 
@@ -193,6 +194,31 @@ function buildModelIndex(
     return index;
 }
 
+type ModelIndex = Map<string, { model: string; pricing: TokenPricing }>;
+
+/**
+ * The defaults never change, and a Config is read once per process, so both
+ * indexes are built at most once instead of per usage record.
+ */
+let defaultModelIndex: ModelIndex | null = null;
+const configModelIndexes = new WeakMap<Config, ModelIndex>();
+
+function getDefaultModelIndex(): ModelIndex {
+    if (!defaultModelIndex) {
+        defaultModelIndex = buildModelIndex(DEFAULT_MODEL_PRICING);
+    }
+    return defaultModelIndex;
+}
+
+function getConfigModelIndex(config: Config): ModelIndex {
+    let index = configModelIndexes.get(config);
+    if (!index) {
+        index = buildModelIndex(config.pricing?.models);
+        configModelIndexes.set(config, index);
+    }
+    return index;
+}
+
 function resolveModelPricing(
     config: Config,
     model: string | null
@@ -200,11 +226,9 @@ function resolveModelPricing(
     if (!model) return null;
     const key = normalizeModelKey(model);
     if (!key) return null;
-    const configIndex = buildModelIndex(config.pricing?.models);
-    const fromConfig = configIndex.get(key);
+    const fromConfig = getConfigModelIndex(config).get(key);
     if (fromConfig) return fromConfig;
-    const defaultsIndex = buildModelIndex(DEFAULT_MODEL_PRICING);
-    return defaultsIndex.get(key) || null;
+    return getDefaultModelIndex().get(key) || null;
 }
 
 function mergePricing(
@@ -258,22 +282,15 @@ export function resolvePricingForProfile(
     return applyMultiplier(resolvedPricing, multiplier);
 }
 
-function toFiniteNumber(value: number | null | undefined): number | null {
-    if (value === null || value === undefined) return null;
-    const num = Number(value);
-    if (!Number.isFinite(num)) return null;
-    return num;
-}
-
 export function calculateUsageCost(
     usage: UsageTokenBreakdown | null,
     pricing: TokenPricing | null
 ): number | null {
     if (!usage || !pricing) return null;
-    const inputTokens = toFiniteNumber(usage.inputTokens);
-    const outputTokens = toFiniteNumber(usage.outputTokens);
-    const cacheReadTokens = toFiniteNumber(usage.cacheReadTokens);
-    const cacheWriteTokens = toFiniteNumber(usage.cacheWriteTokens);
+    const inputTokens = coerceNumber(usage.inputTokens);
+    const outputTokens = coerceNumber(usage.outputTokens);
+    const cacheReadTokens = coerceNumber(usage.cacheReadTokens);
+    const cacheWriteTokens = coerceNumber(usage.cacheWriteTokens);
     if (
         inputTokens === null &&
         outputTokens === null &&
@@ -288,7 +305,7 @@ export function calculateUsageCost(
         cacheRead: Math.max(0, cacheReadTokens || 0),
         cacheWrite: Math.max(0, cacheWriteTokens || 0),
     };
-    const knownTotal = toFiniteNumber(
+    const knownTotal = coerceNumber(
         usage.todayTokens ?? usage.totalTokens ?? null
     );
     const breakdownTotal =

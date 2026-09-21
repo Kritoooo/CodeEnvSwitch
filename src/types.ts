@@ -88,7 +88,6 @@ export interface ParsedArgs {
 
 export interface InitArgs {
     apply: boolean;
-    print: boolean;
     shell: string | null;
 }
 

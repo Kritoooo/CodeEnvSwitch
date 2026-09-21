@@ -6,9 +6,11 @@ import * as path from "path";
 import * as os from "os";
 import type { Config, Profile, ProfileType } from "../types";
 import { resolvePath } from "../shell/utils";
+import { getConfigDir } from "../config/io";
 import { normalizeType, inferProfileType, getProfileDisplayName } from "../profile/type";
 import { getStatuslineDebugPath } from "../statusline/debug";
 import { calculateUsageCost, resolvePricingForProfile } from "./pricing";
+import { coerceNumber, isRecord as isPlainObject } from "../utils";
 
 interface UsageRecord {
     ts: string;
@@ -177,14 +179,9 @@ function resolveProfileForRecord(
     return null;
 }
 
-function resolveDefaultConfigDir(configPath: string | null): string {
-    if (configPath) return path.dirname(configPath);
-    return path.join(os.homedir(), ".config", "code-env");
-}
-
 export function getUsagePath(config: Config, configPath: string | null): string | null {
     if (config && config.usagePath) return resolvePath(config.usagePath);
-    const baseDir = resolveDefaultConfigDir(configPath);
+    const baseDir = getConfigDir(configPath);
     return path.join(baseDir, "usage.jsonl");
 }
 
@@ -195,7 +192,7 @@ export function getUsageStatePath(usagePath: string, config: Config): string {
 
 export function getProfileLogPath(config: Config, configPath: string | null): string {
     if (config && config.profileLogPath) return resolvePath(config.profileLogPath)!;
-    const baseDir = resolveDefaultConfigDir(configPath);
+    const baseDir = getConfigDir(configPath);
     return path.join(baseDir, "profile-log.jsonl");
 }
 
@@ -417,13 +414,6 @@ function buildSessionKey(type: ProfileType | null, sessionId: string): string {
     return normalized ? `${normalized}::${sessionId}` : sessionId;
 }
 
-function toFiniteNumber(value: number | null | undefined): number | null {
-    if (value === null || value === undefined) return null;
-    const num = Number(value);
-    if (!Number.isFinite(num)) return null;
-    return num;
-}
-
 function buildUsageLookupKey(
     type: string | null | undefined,
     profileId: string | null | undefined
@@ -434,18 +424,47 @@ function buildUsageLookupKey(
     return `${resolvedType}||${profileId}`;
 }
 
+/**
+ * Per-process caches. A single CLI invocation renders at most one statusline,
+ * so the session corpus only needs walking once and usage.jsonl only needs
+ * parsing once, however many indexes are built from it. Both are dropped again
+ * whenever a write invalidates them.
+ */
+const syncedUsagePaths = new Set<string>();
+let usageRecordsCache: { path: string; records: UsageRecord[] } | null = null;
+
+function invalidateUsageRecordsCache() {
+    usageRecordsCache = null;
+}
+
+function loadUsageRecords(
+    config: Config,
+    configPath: string | null,
+    syncUsage: boolean
+): UsageRecord[] | null {
+    const usagePath = getUsagePath(config, configPath);
+    if (!usagePath) return null;
+    if (syncUsage && !syncedUsagePaths.has(usagePath)) {
+        // Marked before the call so a failing sync is not retried per reader.
+        syncedUsagePaths.add(usagePath);
+        syncUsageFromSessions(config, configPath, usagePath);
+    }
+    if (!usageRecordsCache || usageRecordsCache.path !== usagePath) {
+        usageRecordsCache = {
+            path: usagePath,
+            records: readUsageRecords(usagePath),
+        };
+    }
+    return usageRecordsCache.records;
+}
+
 export function readUsageTotalsIndex(
     config: Config,
     configPath: string | null,
     syncUsage: boolean
 ): UsageTotalsIndex | null {
-    const usagePath = getUsagePath(config, configPath);
-    if (!usagePath) return null;
-    if (syncUsage) {
-        syncUsageFromSessions(config, configPath, usagePath);
-    }
-    const records = readUsageRecords(usagePath);
-    if (records.length === 0) return null;
+    const records = loadUsageRecords(config, configPath, syncUsage);
+    if (!records || records.length === 0) return null;
     return buildUsageTotals(records);
 }
 
@@ -454,13 +473,8 @@ export function readUsageCostIndex(
     configPath: string | null,
     syncUsage: boolean
 ): UsageCostIndex | null {
-    const usagePath = getUsagePath(config, configPath);
-    if (!usagePath) return null;
-    if (syncUsage) {
-        syncUsageFromSessions(config, configPath, usagePath);
-    }
-    const records = readUsageRecords(usagePath);
-    if (records.length === 0) return null;
+    const records = loadUsageRecords(config, configPath, syncUsage);
+    if (!records || records.length === 0) return null;
     const costs = buildUsageCostIndex(records, config);
     if (costs.byKey.size === 0 && costs.byName.size === 0) return null;
     return costs;
@@ -474,13 +488,8 @@ export function readUsageSessionCost(
     syncUsage: boolean
 ): number | null {
     if (!sessionId) return null;
-    const usagePath = getUsagePath(config, configPath);
-    if (!usagePath) return null;
-    if (syncUsage) {
-        syncUsageFromSessions(config, configPath, usagePath);
-    }
-    const records = readUsageRecords(usagePath);
-    if (records.length === 0) return null;
+    const records = loadUsageRecords(config, configPath, syncUsage);
+    if (!records || records.length === 0) return null;
     const normalizedType = normalizeUsageType(type);
     let total = 0;
     let hasCost = false;
@@ -565,12 +574,12 @@ export function syncUsageFromStatuslineInput(
     if (!normalizedType) return;
     const usagePath = getUsagePath(config, configPath);
     if (!usagePath) return;
-    const inputTokens = toFiniteNumber(totals.inputTokens) ?? 0;
-    const outputTokens = toFiniteNumber(totals.outputTokens) ?? 0;
-    const cacheReadTokens = toFiniteNumber(totals.cacheReadTokens) ?? 0;
-    const cacheWriteTokens = toFiniteNumber(totals.cacheWriteTokens) ?? 0;
+    const inputTokens = coerceNumber(totals.inputTokens) ?? 0;
+    const outputTokens = coerceNumber(totals.outputTokens) ?? 0;
+    const cacheReadTokens = coerceNumber(totals.cacheReadTokens) ?? 0;
+    const cacheWriteTokens = coerceNumber(totals.cacheWriteTokens) ?? 0;
     const totalTokens =
-        toFiniteNumber(totals.totalTokens) ??
+        coerceNumber(totals.totalTokens) ??
         inputTokens +
             outputTokens +
             cacheReadTokens +
@@ -884,10 +893,10 @@ export function resolveProfileFromLog(
 ): { profileKey: string | null; profileName: string | null } | null {
     const normalizedType = normalizeType(type || "");
     if (!normalizedType) return null;
+    if (!terminalTag) return null;
     const profileLogPath = getProfileLogPath(config, configPath);
     const entries = readProfileLogEntries([profileLogPath]);
     if (entries.length === 0) return null;
-    if (!terminalTag) return null;
     let best: ProfileLogEntry | null = null;
     let bestTime = Number.NEGATIVE_INFINITY;
     for (const entry of entries) {
@@ -949,7 +958,7 @@ function writeUsageState(statePath: string, state: UsageStateFile) {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
-    const payload = `${JSON.stringify(state, null, 2)}\n`;
+    const payload = `${JSON.stringify(state)}\n`;
     const tmpPath = `${statePath}.tmp`;
     try {
         fs.writeFileSync(tmpPath, payload, "utf8");
@@ -1043,6 +1052,7 @@ export function clearUsageHistory(
     config: Config,
     configPath: string | null
 ): UsageCleanupResult {
+    invalidateUsageRecordsCache();
     const targets = new Set<string>();
     const usagePath = getUsagePath(config, configPath);
     if (usagePath) {
@@ -1106,7 +1116,7 @@ export function clearUsageHistory(
     return { removed, missing, failed };
 }
 
-function collectSessionFiles(root: string | null): string[] {
+export function collectSessionFiles(root: string | null): string[] {
     if (!root || !fs.existsSync(root)) return [];
     const files: string[] = [];
     const stack = [root];
@@ -1145,10 +1155,6 @@ function updateMinMaxTs(
     if (!current.end || new Date(current.end).getTime() < time) {
         current.end = ts;
     }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function coerceModelFromValue(value: unknown): string | null {
@@ -1546,6 +1552,7 @@ function appendUsageRecord(usagePath: string, record: UsageRecord) {
         fs.mkdirSync(dir, { recursive: true });
     }
     fs.appendFileSync(usagePath, `${JSON.stringify(record)}\n`, "utf8");
+    invalidateUsageRecordsCache();
 }
 
 export function readUsageRecords(usagePath: string): UsageRecord[] {
@@ -1879,7 +1886,16 @@ export function syncUsageFromSessions(
         if (profileLogChanged) dirty = true;
         state.profileLogMtimeMs = logStat ? logStat.mtimeMs : undefined;
         state.profileLogSize = logStat ? logStat.size : undefined;
-        state.files = files;
+        // Keep only files that still exist; `files` is otherwise append-only
+        // and accumulates entries for long-deleted sessions forever.
+        const livePaths = [...codexFiles, ...claudeFiles];
+        if (Object.keys(files).length !== livePaths.length) dirty = true;
+        const liveFiles: Record<string, UsageStateEntry> = {};
+        for (const filePath of livePaths) {
+            const entry = files[filePath];
+            if (entry) liveFiles[filePath] = entry;
+        }
+        state.files = liveFiles;
         state.sessions = sessions;
         const prevUsageMtimeMs = state.usageMtimeMs;
         const prevUsageSize = state.usageSize;

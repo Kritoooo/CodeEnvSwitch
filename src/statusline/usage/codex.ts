@@ -4,6 +4,11 @@ import type {
     StatuslineUsageTotals,
 } from "../types";
 import { coerceNumber, firstNumber, isRecord } from "../utils";
+import {
+    parseInputUsageRecord,
+    parseUsageTotalsRecord,
+    type CoreReader,
+} from "./record";
 
 function resolveOutputTokens(record: Record<string, unknown>): number | null {
     const outputTokens =
@@ -51,118 +56,29 @@ function splitInputTokens(
     return { inputTokens: nonCachedInput, cacheReadTokens: cacheRead };
 }
 
+/**
+ * Codex reports a raw input count that already includes cached tokens, and
+ * falls back to reasoning tokens for output.
+ */
+const readCodexCore: CoreReader = (record) => {
+    const split = splitInputTokens(record);
+    return {
+        inputTokens: split.inputTokens,
+        outputTokens: resolveOutputTokens(record),
+        cacheReadTokens: split.cacheReadTokens,
+    };
+};
+
 function parseCodexUsageTotalsRecord(
     record: Record<string, unknown>
 ): StatuslineUsageTotals | null {
-    const split = splitInputTokens(record);
-    const inputTokens = split.inputTokens;
-    const outputTokens = resolveOutputTokens(record);
-    const cacheRead = split.cacheReadTokens;
-    const cacheWrite =
-        firstNumber(
-            record.cache_creation_input_tokens,
-            record.cacheCreationInputTokens,
-            record.cache_write_input_tokens,
-            record.cacheWriteInputTokens,
-            record.cache_write,
-            record.cacheWrite
-        ) ?? null;
-    const totalTokens =
-        firstNumber(
-            record.totalTokens,
-            record.total,
-            record.total_tokens
-        ) ?? null;
-    let computedTotal: number | null = null;
-    if (
-        inputTokens !== null ||
-        outputTokens !== null ||
-        cacheRead !== null ||
-        cacheWrite !== null
-    ) {
-        computedTotal =
-            (inputTokens || 0) +
-            (outputTokens || 0) +
-            (cacheRead || 0) +
-            (cacheWrite || 0);
-    }
-    const resolvedTotal = totalTokens ?? computedTotal;
-    if (
-        inputTokens === null &&
-        outputTokens === null &&
-        cacheRead === null &&
-        cacheWrite === null &&
-        resolvedTotal === null
-    ) {
-        return null;
-    }
-    return {
-        inputTokens,
-        outputTokens,
-        cacheReadTokens: cacheRead,
-        cacheWriteTokens: cacheWrite,
-        totalTokens: resolvedTotal,
-    };
+    return parseUsageTotalsRecord(record, readCodexCore);
 }
 
 function parseCodexInputUsageRecord(
     record: Record<string, unknown>
 ): StatuslineInputUsage | null {
-    const todayTokens =
-        firstNumber(
-            record.todayTokens,
-            record.today,
-            record.today_tokens,
-            record.daily,
-            record.daily_tokens
-        ) ?? null;
-    const totalTokens =
-        firstNumber(
-            record.totalTokens,
-            record.total,
-            record.total_tokens
-        ) ?? null;
-    const split = splitInputTokens(record);
-    const inputTokens = split.inputTokens;
-    const outputTokens = resolveOutputTokens(record);
-    const cacheRead = split.cacheReadTokens;
-    const cacheWrite =
-        firstNumber(
-            record.cache_creation_input_tokens,
-            record.cacheCreationInputTokens,
-            record.cache_write_input_tokens,
-            record.cacheWriteInputTokens,
-            record.cache_write,
-            record.cacheWrite
-        ) ?? null;
-    if (
-        todayTokens === null &&
-        totalTokens === null &&
-        inputTokens === null &&
-        outputTokens === null &&
-        cacheRead === null &&
-        cacheWrite === null
-    ) {
-        return null;
-    }
-    const hasCacheTokens = cacheRead !== null || cacheWrite !== null;
-    const computedTotal = hasCacheTokens
-        ? (inputTokens || 0) +
-          (outputTokens || 0) +
-          (cacheRead || 0) +
-          (cacheWrite || 0)
-        : null;
-    const resolvedTodayTokens = hasCacheTokens
-        ? todayTokens ?? totalTokens ?? computedTotal
-        : todayTokens;
-    return {
-        todayTokens: resolvedTodayTokens,
-        totalTokens: totalTokens ?? null,
-        inputTokens,
-        outputTokens,
-        cacheReadTokens: cacheRead,
-        cacheWriteTokens: cacheWrite,
-    };
+    return parseInputUsageRecord(record, readCodexCore);
 }
 
 function resolveNestedRecord(

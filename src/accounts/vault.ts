@@ -15,6 +15,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import type { ProfileType } from "../types";
+import { getConfigDir } from "../config/io";
 
 export type VaultMode = "link" | "copy";
 
@@ -50,13 +51,8 @@ function ensureDir(dir: string): void {
     }
 }
 
-function resolveConfigDir(configPath: string | null): string {
-    if (configPath) return path.dirname(configPath);
-    return path.join(os.homedir(), ".config", "code-env");
-}
-
 export function getVaultRoot(configPath: string | null): string {
-    return path.join(resolveConfigDir(configPath), "accounts");
+    return path.join(getConfigDir(configPath), "accounts");
 }
 
 export function getVaultDir(
@@ -338,28 +334,15 @@ export function isManagedLive(configPath: string | null, type: ProfileType): boo
     );
 }
 
-export function describeLive(configPath: string | null, type: ProfileType): string {
-    const live = getLiveCredentialPath(type);
-    const stat = lstatOrNull(live);
-    if (!stat) return "missing";
-    if (stat.isSymbolicLink()) {
-        return readVaultLinkTarget(live, getVaultRoot(configPath))
-            ? "managed symlink"
-            : "foreign symlink";
-    }
-    return "regular file";
-}
-
 /**
  * Move the credential file sitting at the live path into `profileKey`'s vault
  * and replace it with a symlink, so an existing login is captured rather than
- * guessed at or destroyed. `transform` lets a caller strip fields first.
+ * guessed at or destroyed.
  */
 export function adoptLiveCredential(
     configPath: string | null,
     type: ProfileType,
-    profileKey: string,
-    transform?: (text: string) => string
+    profileKey: string
 ): void {
     const live = getLiveCredentialPath(type);
     const stat = lstatOrNull(live);
@@ -373,8 +356,7 @@ export function adoptLiveCredential(
         throw new Error(`${live} is a symlink codenv does not own; resolve it manually.`);
     }
 
-    const raw = fs.readFileSync(live, "utf8");
-    const content = transform ? transform(raw) : raw;
+    const content = fs.readFileSync(live, "utf8");
     writeVaultCredential(configPath, type, profileKey, content);
 
     fs.unlinkSync(live);

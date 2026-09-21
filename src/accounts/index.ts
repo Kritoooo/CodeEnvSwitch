@@ -15,7 +15,6 @@ export {
     writeVaultCredential,
     readVaultCredential,
     isManagedLive,
-    describeLive,
     adoptLiveCredential,
 } from "./vault";
 export { applyProfileAccount } from "./apply";

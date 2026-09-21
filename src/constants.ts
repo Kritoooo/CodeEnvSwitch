@@ -3,15 +3,12 @@
  */
 import type { ProfileType } from "./types";
 
-/** Comment markers delimiting the block codenv owns inside config.toml. */
+/** Comment markers delimiting the block codenv owns inside a file it edits. */
 export const CODENV_BLOCK_START = "# >>> codenv >>>";
 export const CODENV_BLOCK_END = "# <<< codenv <<<";
 
 /** Provider id codenv creates for API profiles, distinct from codex's built-in "openai". */
 export const CODEX_PROVIDER_NAME = "OpenAI";
-
-/** Restored as `model_provider` whenever no API profile is active. */
-export const CODEX_DEFAULT_BASE_PROVIDER = "openai";
 
 export const DEFAULT_PROFILE_TYPES: ProfileType[] = ["codex", "claude"];
 

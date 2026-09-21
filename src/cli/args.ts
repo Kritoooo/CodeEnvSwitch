@@ -37,16 +37,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 export function parseInitArgs(args: string[]): InitArgs {
-    const result: InitArgs = { apply: true, print: false, shell: null };
+    const result: InitArgs = { apply: true, shell: null };
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg === "--apply") {
             result.apply = true;
-            result.print = false;
             continue;
         }
         if (arg === "--print") {
-            result.print = true;
             result.apply = false;
             continue;
         }

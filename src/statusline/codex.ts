@@ -4,8 +4,13 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { Config } from "../types";
-import { resolveCodexConfigPath } from "../codex/config";
+import {
+    parseSectionByHeader,
+    resolveCodexConfigPath,
+    type TomlSectionRange,
+} from "../codex/config";
 import { askConfirm, createReadline } from "../ui";
+import { parseBooleanEnv } from "../utils";
 
 interface ParsedTuiConfig {
     statusLineItems: string[] | null;
@@ -21,20 +26,6 @@ interface TuiSection {
     end: number;
     sectionText: string;
     config: ParsedTuiConfig;
-}
-
-interface TomlSectionRange {
-    start: number;
-    end: number;
-    sectionText: string;
-}
-
-function parseBooleanEnv(value: string | undefined): boolean | null {
-    if (value === undefined) return null;
-    const normalized = String(value).trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(normalized)) return true;
-    if (["0", "false", "no", "off"].includes(normalized)) return false;
-    return null;
 }
 
 function resolveDesiredStatusLineItems(config: Config): string[] | null {
@@ -154,27 +145,6 @@ function parseStatusLineItems(sectionText: string): string[] | null {
     }
 
     return null;
-}
-
-function parseSectionByHeader(
-    text: string,
-    headerRegex: RegExp
-): TomlSectionRange | null {
-    const match = headerRegex.exec(text);
-    if (!match || match.index === undefined) return null;
-
-    const start = match.index;
-    const afterHeader = start + match[0].length;
-    const rest = text.slice(afterHeader);
-    const nextHeaderMatch = rest.match(/^[^\S\r\n]*\[.*?\][^\S\r\n]*$/m);
-    const end = nextHeaderMatch
-        ? afterHeader + (nextHeaderMatch.index ?? rest.length)
-        : text.length;
-    return {
-        start,
-        end,
-        sectionText: text.slice(start, end).trimEnd(),
-    };
 }
 
 function parseTuiSection(text: string): TuiSection | null {

@@ -7,12 +7,14 @@ import { spawn } from "child_process";
 import type { Config, ProfileType } from "../types";
 import { normalizeType } from "../profile/type";
 import {
+    collectSessionFiles,
     getCodexSessionsPath,
     getClaudeSessionsPath,
     logProfileUse,
     logSessionBinding,
     readSessionBindingIndex,
 } from "../usage";
+import { isRecord, parseBooleanEnv } from "../utils";
 import { ensureClaudeStatusline } from "../statusline/claude";
 import { ensureCodexStatuslineConfig } from "../statusline/codex";
 import { resolveProfileFromEnv } from "../profile/resolve";
@@ -27,36 +29,6 @@ interface SessionMeta {
     timestamp: string | null;
     fileTimestampMs: number | null;
     cwd: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function collectSessionFiles(root: string | null): string[] {
-    if (!root || !fs.existsSync(root)) return [];
-    const files: string[] = [];
-    const stack = [root];
-    while (stack.length > 0) {
-        const current = stack.pop();
-        if (!current) continue;
-        let entries: fs.Dirent[];
-        try {
-            entries = fs.readdirSync(current, { withFileTypes: true });
-        } catch {
-            continue;
-        }
-        for (const entry of entries) {
-            if (entry.name.startsWith(".")) continue;
-            const full = path.join(current, entry.name);
-            if (entry.isDirectory()) {
-                stack.push(full);
-            } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-                files.push(full);
-            }
-        }
-    }
-    return files;
 }
 
 function readFirstJsonLine(filePath: string): unknown | null {
@@ -204,14 +176,6 @@ function getProfileEnv(type: ProfileType): { key: string | null; name: string | 
     return { key, name };
 }
 
-function parseBooleanEnv(value: string | undefined): boolean | null {
-    if (value === undefined) return null;
-    const normalized = String(value).trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(normalized)) return true;
-    if (["0", "false", "no", "off"].includes(normalized)) return false;
-    return null;
-}
-
 function isStatuslineEnabled(type: ProfileType): boolean {
     if (!process.stdout.isTTY || process.env.TERM === "dumb") return false;
     const disable = parseBooleanEnv(process.env.CODE_ENV_STATUSLINE_DISABLE);
@@ -223,13 +187,6 @@ function isStatuslineEnabled(type: ProfileType): boolean {
     const genericFlag = parseBooleanEnv(process.env.CODE_ENV_STATUSLINE);
     if (genericFlag !== null) return genericFlag;
     return true;
-}
-
-async function ensureClaudeStatuslineConfig(
-    config: Config,
-    enabled: boolean
-): Promise<void> {
-    await ensureClaudeStatusline(config, enabled);
 }
 
 export async function runLaunch(
@@ -267,7 +224,7 @@ export async function runLaunch(
 
     const statuslineEnabled = isStatuslineEnabled(type);
     if (type === "claude") {
-        await ensureClaudeStatuslineConfig(config, statuslineEnabled);
+        await ensureClaudeStatusline(config, statuslineEnabled);
     } else if (type === "codex") {
         await ensureCodexStatuslineConfig(config, statuslineEnabled);
     }

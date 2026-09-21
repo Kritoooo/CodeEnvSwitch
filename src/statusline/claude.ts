@@ -7,6 +7,7 @@ import * as path from "path";
 import type { Config } from "../types";
 import { expandEnv, resolvePath } from "../shell/utils";
 import { askConfirm, createReadline } from "../ui";
+import { isRecord as isPlainObject, parseBooleanEnv } from "../utils";
 
 const DEFAULT_CLAUDE_SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
 const DEFAULT_STATUSLINE_COMMAND = "codenv statusline --type claude --sync-usage";
@@ -18,14 +19,6 @@ interface DesiredStatusLineConfig {
     command: string;
     padding: number;
     settingsPath: string;
-}
-
-function parseBooleanEnv(value: string | undefined): boolean | null {
-    if (value === undefined) return null;
-    const normalized = String(value).trim().toLowerCase();
-    if (["1", "true", "yes", "on"].includes(normalized)) return true;
-    if (["0", "false", "no", "off"].includes(normalized)) return false;
-    return null;
 }
 
 function resolveClaudeSettingsPath(config: Config): string {
@@ -56,10 +49,6 @@ function readSettings(filePath: string): Record<string, unknown> | null {
     } catch {
         return null;
     }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isCommandStatusLine(
